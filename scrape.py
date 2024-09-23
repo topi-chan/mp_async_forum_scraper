@@ -31,7 +31,7 @@ class ForumScraper:
         main_forum_url: str = MAIN_FORUM_URL,
         base_url: str = BASE_URL,
         headers: list = None,
-        concurrency_limit=100,  # Set value equal to the number of fetched headers
+        concurrency_limit=100,
         subforum_name=SUBFORUM_NAME,
         sub_subforum_name: str = SUB_SUBFORUM_NAME,
         exclude: tuple = EXCLUDED_TOPIC_NAMES,
@@ -41,12 +41,28 @@ class ForumScraper:
         next_button_icon: str = NEXT_BUTTON_ICON,
         subforum_link: str = SUBFORUM_LINK,
     ):
+        """
+        Initialize the ForumScraper with the given parameters.
+
+        :param main_forum_url: URL of the main forum.
+        :param base_url: Base URL for constructing full links.
+        :param headers: List of headers for HTTP requests.
+        :param concurrency_limit: Limit for concurrent requests.
+        :param subforum_name: CSS selector for subforum names.
+        :param sub_subforum_name: CSS selector for sub-subforum names.
+        :param exclude: Tuple of topic names to exclude.
+        :param exclude_sub_subforum_url: Tuple of sub-subforum URLs to exclude.
+        :param exclude_sub_subforum_name: Tuple of sub-subforum names to exclude.
+        :param next_button: CSS selector for the "Next" button.
+        :param next_button_icon: CSS selector for the "Next" button icon.
+        :param subforum_link: CSS selector for subforum links.
+        """
         self.main_forum_url = main_forum_url
         self.base_url = base_url
         self.subforum_links = []
         self.sub_subforum_links = []
         self.headers = headers or []
-        self.semaphore = asyncio.Semaphore(concurrency_limit)  # Limit concurrency
+        self.semaphore = asyncio.Semaphore(concurrency_limit)
         self.subforum_name = subforum_name
         self.sub_subforum_name = sub_subforum_name
         self.exclude = exclude
@@ -57,6 +73,11 @@ class ForumScraper:
         self.subforum_link = subforum_link
 
     async def prefetch_headers(self, count: int = 100) -> None:
+        """
+        Fetch random headers asynchronously to mimic different user agents.
+
+        :param count: Number of headers to fetch.
+        """
         logging.info(f"Fetching {count} random headers...")
         tasks = [self.fetch_random_header() for _ in range(count)]
         self.headers = await asyncio.gather(*tasks)
@@ -64,15 +85,32 @@ class ForumScraper:
 
     @staticmethod
     async def fetch_random_header() -> dict:
+        """
+        Fetch a random header asynchronously.
+
+        :return: A dictionary containing a random user agent and referrer.
+        """
         return await asyncio.to_thread(get_random_user_agent_and_referrer)
 
     def get_random_header(self) -> dict:
+        """
+        Get a random header from the pre-fetched headers.
+
+        :return: A dictionary containing a random user agent and referrer.
+        """
         if self.headers:
             return random.choice(self.headers)
         return get_random_user_agent_and_referrer()
 
     @retry((aiohttp.ClientError, asyncio.TimeoutError, Exception))
     async def fetch(self, session: aiohttp.ClientSession, url: str) -> str | None:
+        """
+        Fetch the HTML content of a given URL.
+
+        :param session: The aiohttp client session.
+        :param url: The URL to fetch.
+        :return: The HTML content of the URL or None if excluded.
+        """
         for i in self.exclude_sub_subforum_url:
             if i in url:
                 logging.debug(f"Skipping sub-subforum with {i}: {url}")
@@ -85,6 +123,11 @@ class ForumScraper:
                 return await response.text()
 
     async def extract_subforum_links(self, session: aiohttp.ClientSession) -> None:
+        """
+        Extract links to subforums from the main forum page.
+
+        :param session: The aiohttp client session.
+        """
         try:
             logging.debug(f"Extracting subforum links from: {self.main_forum_url}")
             html = await self.fetch(session, self.main_forum_url)
@@ -107,6 +150,13 @@ class ForumScraper:
     async def extract_sub_subforum_links(
         self, session: aiohttp.ClientSession, subforum_url: str
     ) -> list:
+        """
+        Extract links to sub-subforums from a subforum page.
+
+        :param session: The aiohttp client session.
+        :param subforum_url: The URL of the subforum.
+        :return: A list of tuples containing sub-subforum titles and links.
+        """
         sub_subforum_links = []
         try:
             logging.debug(f"Extracting sub-subforum links from: {subforum_url}")
@@ -131,6 +181,14 @@ class ForumScraper:
     async def scrape_subforum(
         self, session: aiohttp.ClientSession, subforum_name: str, subforum_url: str
     ) -> list:
+        """
+        Scrape topics from a given subforum, handling pagination.
+
+        :param session: The aiohttp client session.
+        :param subforum_name: The name of the subforum.
+        :param subforum_url: The URL of the subforum.
+        :return: A list of tuples containing subforum name, topic title, and link.
+        """
         topics_data = []
         try:
             logging.debug(f"Scraping subforum: {subforum_url}")
@@ -158,33 +216,31 @@ class ForumScraper:
         self, session: aiohttp.ClientSession, subforum_name: str, subforum_url: str
     ) -> list:
         """
-        Scrapes topics directly under a subforum and saves them under the "ogólne" category.
+        Scrape topics directly under a subforum and save them under the "ogólne" category.
+
+        :param session: The aiohttp client session.
+        :param subforum_name: The name of the subforum.
+        :param subforum_url: The URL of the subforum.
+        :return: A list of tuples containing subforum name, topic title, and link.
         """
         topics_data = []
         try:
             logging.debug(f"Scraping general topics in subforum: {subforum_url}")
             next_page_url = subforum_url
 
-            # Continue fetching pages as long as there's a "Next" button
             while next_page_url:
-                # Fetch the current page
                 html = await self.fetch(session, next_page_url)
                 if not html:
-                    break  # Stop if no more data is fetched (due to exclusion or failure)
+                    break
 
                 soup = BeautifulSoup(html, "html.parser")
-
-                # Select the topics under the subforum (not sub-subforums)
                 topics = soup.select(self.subforum_link)
                 for topic in topics:
                     title = topic.text.strip()
                     link = topic["href"]
                     topics_data.append((subforum_name, title, link))
 
-                # Check if there's a "Next" button for pagination
-                next_button = soup.select_one(
-                    self.next_button_icon
-                )  # Correctly select the "Next" button
+                next_button = soup.select_one(self.next_button_icon)
                 if next_button:
                     next_page_url = next_button.get("href")
                     if not next_page_url.startswith("http"):
@@ -193,7 +249,7 @@ class ForumScraper:
                         f"Navigating to next page of general topics: {next_page_url}"
                     )
                 else:
-                    next_page_url = None  # No more pages, stop pagination
+                    next_page_url = None
 
         except Exception as e:
             logging.error(
@@ -206,18 +262,23 @@ class ForumScraper:
 async def scrape_subforum_concurrently(
     scraper: ForumScraper, subforum_title: str, subforum_link: str
 ) -> None:
+    """
+    Orchestrate the scraping process for a subforum, including both general topics and sub-subforums.
+
+    :param scraper: The ForumScraper instance.
+    :param subforum_title: The title of the subforum.
+    :param subforum_link: The URL of the subforum.
+    """
     async with aiohttp.ClientSession(
         connector=aiohttp_socks.ProxyConnector.from_url("socks5://127.0.0.1:9050")
     ) as session:
         all_topics = []
 
-        # Scrape general topics directly under the subforum and save them under "ogólne"
         general_topics = await scraper.scrape_general_topics(
             session, "ogólne", subforum_link
         )
-        all_topics.extend(general_topics)  # Add general topics to the list
+        all_topics.extend(general_topics)
 
-        # Scrape sub-subforums
         sub_subforum_links = await scraper.extract_sub_subforum_links(
             session, subforum_link
         )
@@ -229,20 +290,37 @@ async def scrape_subforum_concurrently(
         for result in results:
             all_topics.extend(result)
 
-        # Save all the topics (both general and sub-subforum topics)
         await save_topics(subforum_title, all_topics)
 
 
 async def run_scraping_for_subforum(subforum: tuple, headers: list) -> None:
+    """
+    Run the scraping process for a subforum asynchronously.
+
+    :param subforum: A tuple containing the subforum title and link.
+    :param headers: List of headers for HTTP requests.
+    """
     scraper = ForumScraper(headers=headers)
     await scrape_subforum_concurrently(scraper, subforum[0], subforum[1])
 
 
 def run_scraping_in_process(subforum: tuple, headers: list) -> None:
+    """
+    Run the scraping process for a subforum within a separate process.
+
+    :param subforum: A tuple containing the subforum title and link.
+    :param headers: List of headers for HTTP requests.
+    """
     asyncio.run(run_scraping_for_subforum(subforum, headers))
 
 
 def run_multiprocessing_scraping(subforum_links: list, headers: list) -> None:
+    """
+    Use multiprocessing to scrape multiple subforums concurrently.
+
+    :param subforum_links: List of subforum links to scrape.
+    :param headers: List of headers for HTTP requests.
+    """
     num_processors = min(os.cpu_count(), len(subforum_links))
     logging.info(f"Using {num_processors} processors for scraping.")
     queue = Queue()
@@ -256,6 +334,11 @@ def run_multiprocessing_scraping(subforum_links: list, headers: list) -> None:
 
 
 async def run_scraping() -> None:
+    """
+    Main function to run the scraping process.
+
+    Prefetch headers, extract subforum links, and run multiprocessing scraping.
+    """
     scraper = ForumScraper()
     await scraper.prefetch_headers(count=100)
     async with aiohttp.ClientSession(
@@ -269,6 +352,11 @@ async def run_scraping() -> None:
 
 
 if __name__ == "__main__":
+    """
+    Entry point of the script.
+
+    Set up logging, start the scraping process, and measure execution time.
+    """
     setup_logging()
     start_time = time.perf_counter()
     asyncio.run(run_scraping())
