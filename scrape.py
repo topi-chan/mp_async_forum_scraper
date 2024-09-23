@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 
 from config import (BASE_URL, EXCLUDE_SUB_SUBFORUM_TOPIC,
                     EXCLUDE_SUB_SUBFORUM_URL, EXCLUDED_TOPIC_NAMES,
-                    MAIN_FORUM_URL, NEXT_BUTTON, SUB_SUBFORUM_NAME,
+                    MAIN_FORUM_URL, NEXT_BUTTON, NEXT_BUTTON_ICON, SUB_SUBFORUM_NAME,
                     SUBFORUM_LINK, SUBFORUM_NAME)
 from setup import (get_random_user_agent_and_referrer, listener_process,
                    setup_logging)
@@ -40,6 +40,7 @@ class ForumScraper:
         exclude_sub_subforum_url (tuple): Tuple of sub-subforum URLs to exclude.
         exclude_sub_subforum_name (tuple): Tuple of sub-subforum names to exclude.
         next_button (str): CSS selector for the "Next" button.
+        next_button_icon (str): CSS selector for the "Next" button icon.
         subforum_link (str): CSS selector for subforum links.
     """
 
@@ -55,6 +56,7 @@ class ForumScraper:
         exclude_sub_subforum_url: tuple = EXCLUDE_SUB_SUBFORUM_URL,
         exclude_sub_subforum_name: tuple = EXCLUDE_SUB_SUBFORUM_TOPIC,
         next_button: str = NEXT_BUTTON,
+        next_button_icon: str = NEXT_BUTTON_ICON,
         subforum_link: str = SUBFORUM_LINK,
     ):
         """
@@ -70,6 +72,7 @@ class ForumScraper:
         :param exclude_sub_subforum_url: Tuple of sub-subforum URLs to exclude.
         :param exclude_sub_subforum_name: Tuple of sub-subforum names to exclude.
         :param next_button: CSS selector for the "Next" button.
+        :param next_button_icon: CSS selector for the "Next" button icon.
         :param subforum_link: CSS selector for subforum links.
         """
         self.main_forum_url = main_forum_url
@@ -84,6 +87,7 @@ class ForumScraper:
         self.exclude_sub_subforum_url = exclude_sub_subforum_url
         self.exclude_sub_subforum_name = exclude_sub_subforum_name
         self.next_button = next_button
+        self.next_button_icon = next_button_icon
         self.subforum_link = subforum_link
 
     async def prefetch_headers(self, count: int = 100) -> None:
@@ -226,6 +230,59 @@ class ForumScraper:
             logging.error(f"Error scraping subforum {subforum_url}: {e}")
         return topics_data
 
+    async def scrape_general_topics(
+        self, session: aiohttp.ClientSession, subforum_name: str, subforum_url: str
+    ) -> list:
+        """
+        Scrapes topics directly under a subforum and saves them under the "ogólne" category.
+
+        :param session: The aiohttp client session.
+        :param subforum_name: The name of the subforum.
+        :param subforum_url: The URL of the subforum.
+        :return: A list of tuples containing subforum name, topic title, and link.
+        """
+        topics_data = []
+        try:
+            logging.debug(f"Scraping general topics in subforum: {subforum_url}")
+            next_page_url = subforum_url
+
+            # Continue fetching pages as long as there's a "Next" button
+            while next_page_url:
+                # Fetch the current page
+                html = await self.fetch(session, next_page_url)
+                if not html:
+                    break  # Stop if no more data is fetched (due to exclusion or failure)
+
+                soup = BeautifulSoup(html, "html.parser")
+
+                # Select the topics under the subforum (not sub-subforums)
+                topics = soup.select(self.subforum_link)
+                for topic in topics:
+                    title = topic.text.strip()
+                    link = topic["href"]
+                    topics_data.append((subforum_name, title, link))
+
+                # Check if there's a "Next" button for pagination
+                next_button = soup.select_one(
+                    self.next_button_icon
+                )  # Correctly select the "Next" button
+                if next_button:
+                    next_page_url = next_button.get("href")
+                    if not next_page_url.startswith("http"):
+                        next_page_url = f"{self.base_url}{next_page_url}"
+                    logging.debug(
+                        f"Navigating to next page of general topics: {next_page_url}"
+                    )
+                else:
+                    next_page_url = None  # No more pages, stop pagination
+
+        except Exception as e:
+            logging.error(
+                f"Error scraping general topics in subforum {subforum_url}: {e}"
+            )
+
+        return topics_data
+
 
 async def scrape_subforum_concurrently(
     scraper: ForumScraper, subforum_title: str, subforum_link: str
@@ -240,10 +297,18 @@ async def scrape_subforum_concurrently(
     async with aiohttp.ClientSession(
         connector=aiohttp_socks.ProxyConnector.from_url("socks5://127.0.0.1:9050")
     ) as session:
+        all_topics = []
+
+        # Scrape general topics directly under the subforum and save them under "ogólne"
+        general_topics = await scraper.scrape_general_topics(
+            session, "ogólne", subforum_link
+        )
+        all_topics.extend(general_topics)  # Add general topics to the list
+
+        # Scrape sub-subforums
         sub_subforum_links = await scraper.extract_sub_subforum_links(
             session, subforum_link
         )
-        all_topics = []
         tasks = [
             scraper.scrape_subforum(session, title, link)
             for title, link in sub_subforum_links
@@ -251,6 +316,8 @@ async def scrape_subforum_concurrently(
         results = await asyncio.gather(*tasks)
         for result in results:
             all_topics.extend(result)
+
+        # Save all the topics (both general and sub-subforum topics)
         await save_topics(subforum_title, all_topics)
 
 
