@@ -26,7 +26,9 @@ def polish_sort_key(text: str) -> list[int]:
     return [alphabet_order.get(c, 999) for c in normalized if c.isalpha()]
 
 
-def save_to_single_file(main_subforum_name: str, all_topics: list[tuple[str, str, str]]) -> None:
+def save_to_single_file(
+    main_subforum_name: str, all_topics: list[tuple[str, str, str]]
+) -> None:
     """
     Save all topics to a single file, ensuring uniqueness and sorting.
 
@@ -61,7 +63,12 @@ def save_to_single_file(main_subforum_name: str, all_topics: list[tuple[str, str
     logging.info(f"All topics saved to {file_path}.")
 
 
-def retry(exceptions: tuple[type[BaseException], ...], tries: int = 3, delay: int = 2, backoff: float = 1.5) -> callable:
+def retry(
+    exceptions: tuple[type[BaseException], ...],
+    tries: int = 3,
+    delay: int = 2,
+    backoff: float = 1.5,
+) -> callable:
     """
     Retry decorator to retry the decorated function in case of specified exceptions.
 
@@ -120,7 +127,9 @@ def sanitize_filename(filename: str) -> str:
     return re.sub(r"[^\x00-\x7F]+", "", filename)
 
 
-async def save_topics(subforum_name: str, all_topics: list[tuple[str, str, str]]) -> None:
+async def save_topics(
+    subforum_name: str, all_topics: list[tuple[str, str, str]]
+) -> None:
     """
     Save scraped topics to a file asynchronously with uniqueness and sorting.
 
