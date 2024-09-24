@@ -1,6 +1,5 @@
 import functools
 import logging
-from logging.handlers import RotatingFileHandler
 import os
 import re
 import subprocess
@@ -8,6 +7,7 @@ import sys
 import tarfile
 import time
 import unicodedata
+from logging.handlers import RotatingFileHandler
 
 import aiofiles
 
