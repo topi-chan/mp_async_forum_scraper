@@ -3,10 +3,13 @@ import logging
 import os
 import re
 import subprocess
+import tarfile
 import time
 import unicodedata
 
 import aiofiles
+
+from config import ARCHIVE_NAME, FILES_DIR, RESULTS_DIR
 
 # Define Polish alphabet order
 polish_alphabet = "aąbcćdeęfghijklłmnńoópqrsśtuvwxyzźż"
@@ -127,14 +130,31 @@ def sanitize_filename(filename: str) -> str:
     return re.sub(r"[^\x00-\x7F]+", "", filename)
 
 
+def wipe_files_directory() -> None:
+    """
+    Wipe the contents of the FILES_DIR directory to avoid appending to old data.
+    """
+    files_dir = "files"
+    if os.path.exists(files_dir):
+        for file in os.listdir(files_dir):
+            file_path = os.path.join(files_dir, file)
+            try:
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+            except Exception as e:
+                logging.error(f"Error while deleting file {file_path}: {e}")
+    else:
+        os.makedirs(files_dir)  # Create the 'files/' directory if it doesn't exist
+
+
 async def save_topics(
     subforum_name: str, all_topics: list[tuple[str, str, str]]
-) -> None:
+) -> str:
     """
     Save scraped topics to a file asynchronously with uniqueness and sorting.
-
     :param subforum_name: The name of the subforum.
     :param all_topics: A list of tuples containing subforum, title, and link.
+    :return: The path of the saved file.
     """
     unique_topics = []
     seen_titles = set()
@@ -146,28 +166,42 @@ async def save_topics(
             unique_topics.append((subforum, title, link))
             seen_titles.add(title_lower)
 
-    # Sort topics by subforum and title (Polish alphabetical order)
-    sorted_topics = sorted(unique_topics, key=lambda x: (x[0], polish_sort_key(x[1])))
-
-    # Ensure the 'files' directory exists
-    os.makedirs("files", exist_ok=True)
+    # Sort topics by subforum and title (case-insensitive)
+    sorted_topics = sorted(unique_topics, key=lambda x: (x[0], x[1].lower()))
 
     # Sanitize the subforum name to avoid non-ASCII characters
     sanitized_subforum_name = sanitize_filename(subforum_name)
-    file_path = f"files/{sanitized_subforum_name.replace(' ', '_').lower()}.txt"
+    file_path = f"{FILES_DIR}/{sanitized_subforum_name}.txt"
 
     # Write topics to the file asynchronously
-    async with aiofiles.open(file_path, "a", encoding="utf-8") as file:
+    async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
         current_subforum = None
         for subforum, title, link in sorted_topics:
-            # Write subforum header if we have changed subforum
             if subforum != current_subforum:
                 if current_subforum is not None:
                     await file.write("\n")  # Add a new line between subforums
-                await file.write(f"\n[{subforum}]\n")  # Write subforum header
+                await file.write(f"\n[{subforum}]\n")
                 current_subforum = subforum
 
             # Write each topic under the subforum
             await file.write(f"[*][url={link}]{title}[/url]\n")
 
     logging.info(f"All topics saved to {file_path}.")
+    return file_path
+
+
+def create_tar_archive(results_dir: str = RESULTS_DIR) -> str:
+    """
+    Create a .tar archive of the files/ directory and store it in the specified results directory.
+    :param results_dir: Directory to store the archive.
+    :return: The path of the created tar archive.
+    """
+    os.makedirs(results_dir, exist_ok=True)
+    archive_path = os.path.join(results_dir, f"{ARCHIVE_NAME}.tar")
+
+    # Create the tar archive
+    with tarfile.open(archive_path, "w") as tar:
+        tar.add(FILES_DIR, arcname=os.path.basename(FILES_DIR))
+
+    logging.info(f"Created tar archive at {archive_path}")
+    return archive_path

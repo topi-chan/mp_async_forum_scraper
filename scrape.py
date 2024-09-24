@@ -15,7 +15,8 @@ from config import (BASE_URL, EXCLUDE_SUB_SUBFORUM_TOPIC,
                     SUB_SUBFORUM_NAME, SUBFORUM_LINK, SUBFORUM_NAME)
 from setup import (get_random_user_agent_and_referrer, listener_process,
                    setup_logging)
-from utils import retry, save_topics, start_tor_service
+from utils import (create_tar_archive, retry, save_topics, start_tor_service,
+                   wipe_files_directory)
 
 # Start Tor service before the script runs
 try:
@@ -288,7 +289,7 @@ async def scrape_subforum_concurrently(
         general_topics = await scraper.scrape_general_topics(
             session, "ogólne", subforum_link
         )
-        all_topics.extend(general_topics)  # Add general topics to the list
+        all_topics.extend(general_topics)
 
         # Scrape sub-subforums
         sub_subforum_links = await scraper.extract_sub_subforum_links(
@@ -302,7 +303,7 @@ async def scrape_subforum_concurrently(
         for result in results:
             all_topics.extend(result)
 
-        # Save all the topics (both general and sub-subforum topics)
+        # Save all the topics
         await save_topics(subforum_title, all_topics)
 
 
@@ -351,7 +352,11 @@ async def run_scraping() -> None:
     Main function to run the scraping process.
 
     Prefetch headers, extract subforum links, and run multiprocessing scraping.
+    Manages wiping files, creating archives, and handling IP rotation.
     """
+    # Wipe the FILES_DIR directory before starting the scraping process
+    wipe_files_directory()
+
     scraper = ForumScraper()
     await scraper.prefetch_headers(count=100)
     async with aiohttp.ClientSession(
@@ -362,6 +367,10 @@ async def run_scraping() -> None:
         manager = Manager()
         headers = manager.list(scraper.headers)
         run_multiprocessing_scraping(scraper.subforum_links, headers)
+
+    # Create the archive after all scraping has completed
+    archive_path = create_tar_archive()
+    logging.info(f"Scraping completed. Archive saved at: {archive_path}")
 
 
 if __name__ == "__main__":
