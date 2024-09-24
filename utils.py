@@ -13,9 +13,12 @@ polish_alphabet = "aąbcćdeęfghijklłmnńoópqrsśtuvwxyzźż"
 alphabet_order = {letter: index for index, letter in enumerate(polish_alphabet)}
 
 
-def polish_sort_key(text: str):
+def polish_sort_key(text: str) -> list[int]:
     """
     Sort key function to handle sorting of Polish characters correctly.
+
+    :param text: The text to be sorted.
+    :return: A list of integers representing the order of characters in the text.
     """
     # Normalize the text to NFKD form to separate accents and base characters
     normalized = unicodedata.normalize("NFKD", text.lower())
@@ -23,7 +26,13 @@ def polish_sort_key(text: str):
     return [alphabet_order.get(c, 999) for c in normalized if c.isalpha()]
 
 
-def save_to_single_file(main_subforum_name, all_topics):
+def save_to_single_file(main_subforum_name: str, all_topics: list[tuple[str, str, str]]) -> None:
+    """
+    Save all topics to a single file, ensuring uniqueness and sorting.
+
+    :param main_subforum_name: The name of the main subforum.
+    :param all_topics: A list of tuples containing subforum, title, and link.
+    """
     unique_topics = []
     seen_titles = set()
 
@@ -52,17 +61,18 @@ def save_to_single_file(main_subforum_name, all_topics):
     logging.info(f"All topics saved to {file_path}.")
 
 
-def retry(exceptions, tries=3, delay=2, backoff=1.5):
+def retry(exceptions: tuple[type[BaseException], ...], tries: int = 3, delay: int = 2, backoff: float = 1.5) -> callable:
     """
-    Retry decorator to retry the decorated function in case of specified exceptions. Use if needed.
+    Retry decorator to retry the decorated function in case of specified exceptions.
 
     :param exceptions: A tuple of exception types to catch and retry on.
     :param tries: Number of attempts.
     :param delay: Initial delay between retries.
     :param backoff: Multiplier to increase the delay between each retry.
+    :return: The decorated function with retry logic.
     """
 
-    def decorator(func):
+    def decorator(func: callable) -> callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             _tries, _delay = tries, delay
@@ -84,8 +94,10 @@ def retry(exceptions, tries=3, delay=2, backoff=1.5):
 
 
 @retry((subprocess.CalledProcessError,), tries=5, delay=2)
-def start_tor_service():
-    """Start the Tor service with retries, but only if it's not already running."""
+def start_tor_service() -> None:
+    """
+    Start the Tor service with retries, but only if it's not already running.
+    """
     # Check if Tor is already running
     result = subprocess.run(
         ["service", "tor", "status"], capture_output=True, text=True
@@ -97,21 +109,23 @@ def start_tor_service():
         subprocess.run(["service", "tor", "start"], check=True)
 
 
-def sanitize_filename(filename):
+def sanitize_filename(filename: str) -> str:
     """
     Remove or replace non-ASCII characters from the filename.
-    This will ensure that the filename is compatible with the filesystem.
+
+    :param filename: The original filename.
+    :return: The sanitized filename.
     """
     # Replace non-ASCII characters with an empty string
     return re.sub(r"[^\x00-\x7F]+", "", filename)
 
 
-@retry((Exception,))
-async def save_topics(subforum_name, all_topics):
+async def save_topics(subforum_name: str, all_topics: list[tuple[str, str, str]]) -> None:
     """
     Save scraped topics to a file asynchronously with uniqueness and sorting.
-    Ensures the file and directory are created if they don't exist.
-    Polish characters in file names are removed.
+
+    :param subforum_name: The name of the subforum.
+    :param all_topics: A list of tuples containing subforum, title, and link.
     """
     unique_topics = []
     seen_titles = set()

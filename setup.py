@@ -31,7 +31,12 @@ referers = (
 
 
 def setup_browser():
-    """Setup Selenium browser"""
+    """
+    Setup Selenium browser with specific options and preferences to run
+    in lightweight mode, also on AWS Lambda container.
+
+    :return: Configured Selenium WebDriver instance.
+    """
     options = webdriver.ChromeOptions()
     options.binary_location = "/opt/chrome-linux64/chrome"
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -74,8 +79,12 @@ def setup_browser():
     return webdriver.Chrome(service=svc, options=options)
 
 
-# Fetch random User-Agent and Referrer from an API (e.g., httpbin) using tor
 def get_random_user_agent_and_referrer():
+    """
+    Fetch random User-Agent and Referer from an API using Tor.
+
+    :return: Dictionary containing User-Agent and Referer.
+    """
     try:
         # Set up proxies to use Tor
         proxies = {
@@ -100,9 +109,13 @@ def get_random_user_agent_and_referrer():
     return {"User-Agent": user_agent, "Referer": referer}
 
 
-# Adjusted Logging setup with multiprocessing queue
 def setup_logging(queue: Queue = None) -> None:
-    log_format = "%(asctime)s [PID: %(process)d] %(levelname)s: %(message)s"  # Use correct format for levelname
+    """
+    Setup logging configuration with optional multiprocessing queue.
+
+    :param queue: Optional multiprocessing queue for logging.
+    """
+    log_format = "%(asctime)s [PID: %(process)d] %(levelname)s: %(message)s"
     root_logger = logging.getLogger()
 
     if root_logger.hasHandlers():
@@ -124,8 +137,14 @@ def setup_logging(queue: Queue = None) -> None:
     urllib3_logger.setLevel(logging.WARNING)
 
 
-# Listener process to handle logs from multiple processes
 def listener_process(queue: Queue, log_file: str = "scraping.log") -> QueueListener:
+    """
+    Listener process to handle logs from multiple processes.
+
+    :param queue: Multiprocessing queue for logging.
+    :param log_file: Path to the log file.
+    :return: Configured QueueListener instance.
+    """
     listener_handler = logging.FileHandler(log_file)
     listener_handler.setLevel(logging.DEBUG)
     listener_handler.setFormatter(
@@ -146,7 +165,10 @@ async def async_get_random_user_agent_and_referrer(
     session: aiohttp.ClientSession,
 ) -> dict:
     """
-    Fetch a random User-Agent and Referer using an external API over Tor asynchronously if needed.
+    Fetch a random User-Agent and Referer using an external API over Tor asynchronously if needed (backup func).
+
+    :param session: The aiohttp client session.
+    :return: Dictionary containing User-Agent and Referer.
     """
     try:
         async with session.get("https://api.apicagent.com") as response:
