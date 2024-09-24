@@ -1,5 +1,7 @@
 # Install binary dependencies for Selenium
 FROM python:3.10-slim as build
+
+# Install necessary packages including Tor
 RUN apt-get update && apt-get install -y unzip curl tor && \
     curl -Lo "/tmp/chromedriver-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/122.0.6261.94/linux64/chromedriver-linux64.zip" && \
     curl -Lo "/tmp/chrome-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/122.0.6261.94/linux64/chrome-linux64.zip" && \
@@ -26,9 +28,13 @@ RUN apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python packages
-RUN pip install selenium==4.18.1 && pip install requests~=2.32.3 && pip install requests[socks] \
-    && pip install beautifulsoup4~=4.12.3 && pip install aiohttp~=3.10.3 && pip install aiofiles~=24.1.0 \
-    && pip install aiohttp_socks~=0.9.0
+RUN pip install selenium==4.18.1 \
+    && pip install requests~=2.32.3 'requests[socks]' \
+    && pip install beautifulsoup4~=4.12.3 \
+    && pip install aiohttp~=3.10.3 \
+    && pip install aiofiles~=24.1.0 \
+    && pip install aiohttp_socks~=0.9.0 \
+    && pip install fastapi uvicorn
 
 # Set Tor to listen on 9050
 RUN echo "SocksPort 127.0.0.1:9050" >> /etc/tor/torrc
@@ -36,5 +42,11 @@ RUN echo "SocksPort 127.0.0.1:9050" >> /etc/tor/torrc
 # Set the working directory
 WORKDIR /app
 
-# Copy scraper script (initial copy, in case volume mount fails)
-COPY scrape.py ./
+# Copy your application code
+COPY . /app
+
+# Expose port 8000 for FastAPI
+EXPOSE 8000
+
+# Start Tor and run the FastAPI app with Uvicorn - for now run manually in the container
+# CMD ["sh", "-c", "service tor start && uvicorn main:app --host 0.0.0.0 --port 8000"]

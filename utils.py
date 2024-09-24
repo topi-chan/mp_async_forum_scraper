@@ -1,8 +1,10 @@
 import functools
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 import re
 import subprocess
+import sys
 import tarfile
 import time
 import unicodedata
@@ -205,3 +207,31 @@ def create_tar_archive(results_dir: str = RESULTS_DIR) -> str:
 
     logging.info(f"Created tar archive at {archive_path}")
     return archive_path
+
+
+def setup_api_logging():
+    """
+    Set up logging for the FastAPI application with log rotation.
+    """
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # Create handlers
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+
+    file_handler = RotatingFileHandler(
+        "app.log", maxBytes=5 * 1024 * 1024, backupCount=5
+    )
+    file_handler.setLevel(logging.INFO)
+
+    # Create formatters and add them to the handlers
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    console_handler.setFormatter(formatter)
+    file_handler.setFormatter(formatter)
+
+    # Clear existing handlers, and add the new handlers
+    if logger.hasHandlers():
+        logger.handlers.clear()
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)

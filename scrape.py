@@ -9,14 +9,26 @@ import aiohttp
 import aiohttp_socks
 from bs4 import BeautifulSoup
 
-from config import (BASE_URL, EXCLUDE_SUB_SUBFORUM_TOPIC,
-                    EXCLUDE_SUB_SUBFORUM_URL, EXCLUDED_TOPIC_NAMES,
-                    MAIN_FORUM_URL, NEXT_BUTTON, NEXT_BUTTON_ICON,
-                    SUB_SUBFORUM_NAME, SUBFORUM_LINK, SUBFORUM_NAME)
-from setup import (get_random_user_agent_and_referrer, listener_process,
-                   setup_logging)
-from utils import (create_tar_archive, retry, save_topics, start_tor_service,
-                   wipe_files_directory)
+from config import (
+    BASE_URL,
+    EXCLUDE_SUB_SUBFORUM_TOPIC,
+    EXCLUDE_SUB_SUBFORUM_URL,
+    EXCLUDED_TOPIC_NAMES,
+    MAIN_FORUM_URL,
+    NEXT_BUTTON,
+    NEXT_BUTTON_ICON,
+    SUB_SUBFORUM_NAME,
+    SUBFORUM_LINK,
+    SUBFORUM_NAME,
+)
+from setup import get_random_user_agent_and_referrer, listener_process, setup_logging
+from utils import (
+    create_tar_archive,
+    retry,
+    save_topics,
+    start_tor_service,
+    wipe_files_directory,
+)
 
 # Start Tor service before the script runs
 try:
