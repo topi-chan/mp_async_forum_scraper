@@ -59,22 +59,7 @@ class ForumScraper:
         next_button_icon: str = NEXT_BUTTON_ICON,
         subforum_link: str = SUBFORUM_LINK,
     ):
-        """
-        Initialize the ForumScraper with the given parameters.
-
-        :param main_forum_url: URL of the main forum.
-        :param base_url: Base URL for constructing full links.
-        :param headers: List of headers for HTTP requests.
-        :param concurrency_limit: Limit for concurrent requests.
-        :param subforum_name: CSS selector for subforum names.
-        :param sub_subforum_name: CSS selector for sub-subforum names.
-        :param exclude: Tuple of topic names to exclude.
-        :param exclude_sub_subforum_url: Tuple of sub-subforum URLs to exclude.
-        :param exclude_sub_subforum_name: Tuple of sub-subforum names to exclude.
-        :param next_button: CSS selector for the "Next" button.
-        :param next_button_icon: CSS selector for the "Next" button icon.
-        :param subforum_link: CSS selector for subforum links.
-        """
+        """Initialize the ForumScraper with the given parameters."""
         self.main_forum_url = main_forum_url
         self.base_url = base_url
         self.subforum_links = []
