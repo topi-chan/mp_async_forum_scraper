@@ -1,17 +1,25 @@
-<!-- templates/status.html -->
 <!DOCTYPE html>
 <html>
 <head>
     <title>Scraping Status</title>
-    {% if status == "in_progress" %}
-    <!-- Refresh the page every 15 seconds -->
-    <meta http-equiv="refresh" content="15">
-    {% endif %}
 </head>
 <body>
+    {% if password_needs_reset %}
+    <h1>Password Reset Required</h1>
+    <p>You must change your password before accessing the application.</p>
+    <form action="/change-password" method="post">
+        <label for="current_password">Current Password:</label><br>
+        <input type="password" id="current_password" name="current_password" required><br>
+        <label for="new_password">New Password:</label><br>
+        <input type="password" id="new_password" name="new_password" required><br><br>
+        <input type="submit" value="Change Password">
+    </form>
+    {% else %}
     {% if status == "in_progress" %}
     <h1>A scraping process is already in progress.</h1>
-    <p>Please wait while we process your request. This page will refresh automatically.</p>
+    <p>User <strong>{{ scraper_username }}</strong> started the scraping process.</p>
+    <p>Please wait while we process your request. This page will refresh automatically every 15 seconds.</p>
+    <meta http-equiv="refresh" content="15">
     {% elif status == "complete" %}
     <h1>Scraping complete!</h1>
     {% if last_modified %}
@@ -20,18 +28,27 @@
     <p>You can download the results below:</p>
     <a href="/download">Download Results</a>
     <p>If you wish to start a new scraping session, you can do so below:</p>
+    {% if current_user.is_admin or current_user.last_scrape_time is None or (datetime.utcnow() - current_user.last_scrape_time).total_seconds() >= 3600 %}
     <form action="/scrape" method="post">
         <button type="submit">Start New Scrape</button>
     </form>
+    {% else %}
+    <p>You can start a new scrape in {{ ((current_user.last_scrape_time + timedelta(hours=1)) - datetime.utcnow()).seconds // 60 }} minutes.</p>
+    {% endif %}
     {% elif status == "not_started" %}
     <h1>No scraping results available.</h1>
     <p>You can start a new scraping session below:</p>
+    {% if current_user.is_admin or current_user.last_scrape_time is None or (datetime.utcnow() - current_user.last_scrape_time).total_seconds() >= 3600 %}
     <form action="/scrape" method="post">
         <button type="submit">Start Scraping</button>
     </form>
     {% else %}
+    <p>You can start a new scrape in {{ ((current_user.last_scrape_time + timedelta(hours=1)) - datetime.utcnow()).seconds // 60 }} minutes.</p>
+    {% endif %}
+    {% else %}
     <h1>Status Unknown</h1>
     <p>Unable to determine the status of your request.</p>
+    {% endif %}
     {% endif %}
 </body>
 </html>

@@ -1,42 +1,47 @@
 import logging
 import os
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import psutil
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.templating import Jinja2Templates
 
+from auth import (ACCESS_TOKEN_EXPIRE_MINUTES, authenticate_user,
+                  create_access_token, get_current_active_user,
+                  get_current_user, get_password_hash, users_collection,
+                  verify_password)
 from config import ARCHIVE_FILENAME, PID_FILE, RESULTS_DIR
-from utils import setup_api_logging
+from models import PasswordChangeRequest, User
+from setup import setup_api_logging
 
 setup_api_logging()
 
 app = FastAPI()
 
-
+# Set up Jinja2 templates and datetime format filter for Warsaw timezone
 def datetimeformat(value, format="%Y-%m-%d %H:%M:%S"):
     dt = datetime.fromtimestamp(value, tz=ZoneInfo("Europe/Warsaw"))
     return dt.strftime(format)
 
-
 templates = Jinja2Templates(directory="templates")
-# Register the custom filter
 templates.env.filters["datetimeformat"] = datetimeformat
 
 
 @app.get("/")
 def read_root():
     logging.info("Root endpoint accessed.")
-    return {
-        "message": "Welcome to the Scraper API. Use /scrape to start scraping and /download to download the results."
-    }
+    # Redirect to the status page
+    return RedirectResponse(url="/status", status_code=303)
 
 
 @app.get("/status")
-async def check_status(request: Request):
+async def check_status(
+    request: Request, current_user: User = Depends(get_current_active_user)
+):
     """
     Endpoint that shows the scraping status.
     """
@@ -65,15 +70,27 @@ async def check_status(request: Request):
         os.path.getmtime(archive_path) if os.path.isfile(archive_path) else None
     )
 
+    # Get the user who started the scraping (if running)
+    scraper_username = None
+    if is_running:
+        if os.path.exists("scraper_user.txt"):
+            with open("scraper_user.txt", "r") as f:
+                scraper_username = f.read().strip()
+
     return templates.TemplateResponse(
         "status.html",
-        {"request": request, "status": status, "last_modified": last_modified},
+        {
+            "request": request,
+            "status": status,
+            "last_modified": last_modified,
+            "scraper_username": scraper_username,
+            "current_user": current_user,
+        },
     )
 
 
-# @app.get("/scrape")  # Remove in case need to restrict to POST requests only
 @app.post("/scrape")
-async def scrape_and_redirect():
+async def scrape_and_redirect(current_user: User = Depends(get_current_active_user)):
     """
     Endpoint that starts the scraping process and redirects to a status page.
     """
@@ -90,6 +107,18 @@ async def scrape_and_redirect():
             # Remove stale PID file
             os.remove(pid_file)
 
+    # Rate limiting for non-admin users
+    if not current_user.is_admin:
+        if current_user.last_scrape_time:
+            time_since_last_scrape = datetime.utcnow() - current_user.last_scrape_time
+            if time_since_last_scrape < timedelta(hours=1):
+                remaining_time = timedelta(hours=1) - time_since_last_scrape
+                minutes, seconds = divmod(remaining_time.total_seconds(), 60)
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Please wait {int(minutes)} minutes and {int(seconds)} seconds before starting a new scrape.",
+                )
+
     if is_running:
         logging.info("Scraper is already running.")
         # Redirect to the status page
@@ -105,6 +134,16 @@ async def scrape_and_redirect():
 
         logging.info(f"Scraper process started with PID {process.pid}.")
 
+        # Save the username of the user who started the scraper
+        with open("scraper_user.txt", "w") as f:
+            f.write(current_user.username)
+
+        # Update user's last_scrape_time
+        await users_collection.update_one(
+            {"username": current_user.username},
+            {"$set": {"last_scrape_time": datetime.utcnow()}},
+        )
+
         # Redirect to the status page
         return RedirectResponse(url="/status", status_code=303)
 
@@ -115,7 +154,7 @@ async def redirect_to_status():
 
 
 @app.get("/download")
-async def download_file():
+async def download_file(current_user: User = Depends(get_current_active_user)):
     """
     Endpoint to download the scraped archive. Requires authentication.
     """
@@ -134,12 +173,39 @@ async def download_file():
         )
 
 
-# backup endpoint
-# @app.post("/scrape")
-# @app.get("/scrape")  # Remove in case need to restrict to POST requests only
-# async def trigger_scraping():
-#     script_path = os.path.abspath("scrape.py")
-#     # Start the scraper as a subprocess
-#     subprocess.Popen(["python", script_path])
-#     logging.info("Scraper process started.")
-#     return {"message": "Scraping has been started."}
+@app.post("/token")
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = await authenticate_user(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(status_code=400, detail="Incorrect username or password")
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username},
+        expires_delta=access_token_expires,
+    )
+    response_data = {"access_token": access_token, "token_type": "bearer"}
+
+    if user.password_needs_reset:
+        response_data["password_needs_reset"] = True  # Inform client
+
+    return response_data
+
+
+@app.post("/change-password")
+async def change_password(
+    password_change: PasswordChangeRequest,
+    current_user: User = Depends(get_current_user),
+):
+    # Verify the current password
+    if not await verify_password(
+        password_change.current_password, current_user.hashed_password
+    ):
+        raise HTTPException(status_code=400, detail="Incorrect current password")
+
+    # Update the password
+    hashed_password = await get_password_hash(password_change.new_password)
+    await users_collection.update_one(
+        {"username": current_user.username},
+        {"$set": {"hashed_password": hashed_password, "password_needs_reset": False}},
+    )
+    return {"detail": "Password changed successfully"}

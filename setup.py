@@ -1,8 +1,9 @@
 import logging
 import random
 from logging import StreamHandler
-from logging.handlers import QueueHandler, QueueListener
+from logging.handlers import QueueHandler, QueueListener, RotatingFileHandler
 from multiprocessing import Queue
+import sys
 from tempfile import mkdtemp
 
 import aiohttp
@@ -186,3 +187,30 @@ async def async_get_random_user_agent_and_referrer(
         referer = random.choice(referers)
 
     return {"User-Agent": user_agent, "Referer": referer}
+
+def setup_api_logging():
+    """
+    Set up logging for the FastAPI application with log rotation.
+    """
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # Create handlers
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+
+    file_handler = RotatingFileHandler(
+        "app.log", maxBytes=5 * 1024 * 1024, backupCount=5
+    )
+    file_handler.setLevel(logging.INFO)
+
+    # Create formatters and add them to the handlers
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    console_handler.setFormatter(formatter)
+    file_handler.setFormatter(formatter)
+
+    # Clear existing handlers, and add the new handlers
+    if logger.hasHandlers():
+        logger.handlers.clear()
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)

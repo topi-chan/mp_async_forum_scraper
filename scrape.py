@@ -400,13 +400,17 @@ def main():
     except Exception as e:
         logging.error(f"An error occurred during scraping: {e}")
     finally:
-        # Remove the PID file if it contains our PID
+        # Remove the PID file if it contains PID
         if os.path.exists(pid_file):
             with open(pid_file, "r") as f:
                 pid_in_file = int(f.read())
             if pid_in_file == os.getpid():
                 os.remove(pid_file)
                 logging.info("PID file removed.")
+
+    # Remove the scraper_user.txt file
+    if os.path.exists("scraper_user.txt"):
+        os.remove("scraper_user.txt")
 
 
 if __name__ == "__main__":

@@ -35,11 +35,14 @@ RUN pip install selenium==4.18.1 \
     && pip install aiofiles~=24.1.0 \
     && pip install aiohttp_socks~=0.9.0 \
     && pip install fastapi uvicorn~=0.30.6 \
-    && pip install python-jose[cryptography] passlib[bcrypt] \
+    && pip install python-jose[cryptography]  \
+    && pip install argon2-cffi \
+    && pip install passlib[argon2]==1.7.4 \
     && pip install motor~=3.6.0 \
     && pip install jinja2~=3.1.4 \
     && pip install psutil~=6.0.0 \
-    && pip install APScheduler~=3.10.4
+    && pip install APScheduler~=3.10.4 \
+    && pip install python-multipart~=0.0.10
 
 # Set Tor to listen on 9050
 RUN echo "SocksPort 127.0.0.1:9050" >> /etc/tor/torrc
@@ -53,5 +56,5 @@ COPY . /app
 # Expose port 8000 for FastAPI
 EXPOSE 8000
 
-# Start Tor and run the FastAPI app with Uvicorn - for now run manually in the container
-# CMD ["sh", "-c", "service tor start && uvicorn main:app --host 0.0.0.0 --port 8000"]
+# CMD is set to start Tor and Uvicorn, but will be overridden by Docker Compose
+CMD ["sh", "-c", "sleep 5 && service tor start && uvicorn main:app --host 0.0.0.0 --port 8000"]

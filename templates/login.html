@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+    <script>
+        async function login(event) {
+            event.preventDefault(); // Prevent form from submitting the default way
+            const username = document.getElementById("username").value;
+            const password = document.getElementById("password").value;
+
+            try {
+                const response = await fetch("/token", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/x-www-form-urlencoded",
+                    },
+                    body: new URLSearchParams({
+                        "username": username,
+                        "password": password
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    localStorage.setItem("token", data.access_token);  // Store the JWT in localStorage
+                    window.location.href = "/status";  // Redirect to status page
+                } else {
+                    const errorData = await response.json();
+                    document.getElementById("error").innerText = errorData.detail || "Login failed";
+                }
+            } catch (error) {
+                document.getElementById("error").innerText = "Error during login. Try again.";
+            }
+        }
+    </script>
+</head>
+<body>
+    <h1>Login</h1>
+    <form onsubmit="login(event)">
+        <label for="username">Username:</label><br>
+        <input type="text" id="username" name="username" required><br>
+        <label for="password">Password:</label><br>
+        <input type="password" id="password" name="password" required><br><br>
+        <input type="submit" value="Login">
+    </form>
+    <p id="error" style="color: red;"></p>
+</body>
+</html>
