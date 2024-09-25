@@ -11,7 +11,7 @@ from logging.handlers import RotatingFileHandler
 
 import aiofiles
 
-from config import ARCHIVE_NAME, FILES_DIR, RESULTS_DIR
+from config import ARCHIVE_FILENAME, FILES_DIR, RESULTS_DIR
 
 # Define Polish alphabet order
 polish_alphabet = "aąbcćdeęfghijklłmnńoópqrsśtuvwxyzźż"
@@ -199,12 +199,9 @@ def create_tar_archive(results_dir: str = RESULTS_DIR) -> str:
     :return: The path of the created tar archive.
     """
     os.makedirs(results_dir, exist_ok=True)
-    archive_path = os.path.join(results_dir, ARCHIVE_NAME) # TODO: inspect if not .tar in filename needed
-
-    # Create the tar archive
+    archive_path = os.path.join(results_dir, ARCHIVE_FILENAME)
     with tarfile.open(archive_path, "w") as tar:
         tar.add(FILES_DIR, arcname=os.path.basename(FILES_DIR))
-
     logging.info(f"Created tar archive at {archive_path}")
     return archive_path
 
