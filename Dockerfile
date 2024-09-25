@@ -1,7 +1,7 @@
-# Install binary dependencies for Selenium
+# Install main python image
 FROM python:3.10-slim as build
 
-# Install necessary packages including Tor
+# Install necessary packages including Tor and binary dependencies for Selenium
 RUN apt-get update && apt-get install -y unzip curl tor && \
     curl -Lo "/tmp/chromedriver-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/122.0.6261.94/linux64/chromedriver-linux64.zip" && \
     curl -Lo "/tmp/chrome-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/122.0.6261.94/linux64/chrome-linux64.zip" && \
@@ -34,7 +34,10 @@ RUN pip install selenium==4.18.1 \
     && pip install aiohttp~=3.10.3 \
     && pip install aiofiles~=24.1.0 \
     && pip install aiohttp_socks~=0.9.0 \
-    && pip install fastapi uvicorn
+    && pip install fastapi uvicorn \
+    && pip install python-jose[cryptography] passlib[bcrypt] \
+    && pip install motor \
+    && pip install jinja2
 
 # Set Tor to listen on 9050
 RUN echo "SocksPort 127.0.0.1:9050" >> /etc/tor/torrc

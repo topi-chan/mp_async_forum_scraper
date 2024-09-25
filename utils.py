@@ -199,7 +199,7 @@ def create_tar_archive(results_dir: str = RESULTS_DIR) -> str:
     :return: The path of the created tar archive.
     """
     os.makedirs(results_dir, exist_ok=True)
-    archive_path = os.path.join(results_dir, f"{ARCHIVE_NAME}.tar")
+    archive_path = os.path.join(results_dir, ARCHIVE_NAME) # TODO: inspect if not .tar in filename needed
 
     # Create the tar archive
     with tarfile.open(archive_path, "w") as tar:
