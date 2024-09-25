@@ -34,10 +34,12 @@ RUN pip install selenium==4.18.1 \
     && pip install aiohttp~=3.10.3 \
     && pip install aiofiles~=24.1.0 \
     && pip install aiohttp_socks~=0.9.0 \
-    && pip install fastapi uvicorn \
+    && pip install fastapi uvicorn~=0.30.6 \
     && pip install python-jose[cryptography] passlib[bcrypt] \
-    && pip install motor \
-    && pip install jinja2
+    && pip install motor~=3.6.0 \
+    && pip install jinja2~=3.1.4 \
+    && pip install psutil~=6.0.0 \
+    && pip install APScheduler~=3.10.4
 
 # Set Tor to listen on 9050
 RUN echo "SocksPort 127.0.0.1:9050" >> /etc/tor/torrc

@@ -2,16 +2,18 @@ import asyncio
 import logging
 import os
 import random
+import sys
 import time
 from multiprocessing import Manager, Pool, Queue
 
 import aiohttp
 import aiohttp_socks
+import psutil
 from bs4 import BeautifulSoup
 
 from config import (BASE_URL, EXCLUDE_SUB_SUBFORUM_TOPIC,
                     EXCLUDE_SUB_SUBFORUM_URL, EXCLUDED_TOPIC_NAMES,
-                    MAIN_FORUM_URL, NEXT_BUTTON, NEXT_BUTTON_ICON,
+                    MAIN_FORUM_URL, NEXT_BUTTON, NEXT_BUTTON_ICON, PID_FILE,
                     SUB_SUBFORUM_NAME, SUBFORUM_LINK, SUBFORUM_NAME)
 from setup import (get_random_user_agent_and_referrer, listener_process,
                    setup_logging)
@@ -373,6 +375,38 @@ async def run_scraping() -> None:
     logging.info(f"Scraping completed. Archive saved at: {archive_path}")
 
 
+def main():
+    os.makedirs(os.path.dirname(PID_FILE), exist_ok=True)
+
+    if os.path.exists(PID_FILE):
+        with open(PID_FILE, 'r') as f:
+            pid = int(f.read())
+        if psutil.pid_exists(pid):
+            logging.info("Scraper is already running.")
+            sys.exit()
+        else:
+            # PID file exists but process is not running; remove the stale PID file
+            logging.info("Found stale PID file. Removing it.")
+            os.remove(PID_FILE)
+
+    try:
+        # Write the current PID to the PID file
+        with open(PID_FILE, 'w') as f:
+            f.write(str(os.getpid()))
+        logging.info(f"Scraper started with PID {os.getpid()}.")
+
+        # Run the scraping process
+        asyncio.run(run_scraping())
+
+        logging.info("Scraping completed.")
+    except Exception as e:
+        logging.error(f"An error occurred during scraping: {e}")
+    finally:
+        # Remove the PID file
+        if os.path.exists(PID_FILE):
+            os.remove(PID_FILE)
+
+
 if __name__ == "__main__":
     """
     Entry point of the script.
@@ -381,7 +415,7 @@ if __name__ == "__main__":
     """
     setup_logging()
     start_time = time.perf_counter()
-    asyncio.run(run_scraping())
+    main()
     end_time = time.perf_counter()
     total_time = end_time - start_time
     minutes, seconds = divmod(total_time, 60)
