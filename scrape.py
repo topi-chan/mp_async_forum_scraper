@@ -8,7 +8,6 @@ from multiprocessing import Manager, Pool, Queue
 
 import aiohttp
 import aiohttp_socks
-import psutil
 from bs4 import BeautifulSoup
 
 from config import (BASE_URL, EXCLUDE_SUB_SUBFORUM_TOPIC,
@@ -376,23 +375,22 @@ async def run_scraping() -> None:
 
 
 def main():
-    os.makedirs(os.path.dirname(PID_FILE), exist_ok=True)
+    pid_file = PID_FILE
 
-    if os.path.exists(PID_FILE):
-        with open(PID_FILE, 'r') as f:
-            pid = int(f.read())
-        if psutil.pid_exists(pid):
-            logging.info("Scraper is already running.")
+    # Check if the PID file exists
+    if os.path.exists(pid_file):
+        with open(pid_file, "r") as f:
+            pid_in_file = int(f.read())
+        # If the PID in the file doesn't match the current PID, exit
+        if pid_in_file != os.getpid():
+            logging.info("Another scraper instance is already running.")
             sys.exit()
-        else:
-            # PID file exists but process is not running; remove the stale PID file
-            logging.info("Found stale PID file. Removing it.")
-            os.remove(PID_FILE)
+    else:
+        # This should not happen if the PID file is created before starting the scraper
+        logging.error("PID file not found. Exiting.")
+        sys.exit()
 
     try:
-        # Write the current PID to the PID file
-        with open(PID_FILE, 'w') as f:
-            f.write(str(os.getpid()))
         logging.info(f"Scraper started with PID {os.getpid()}.")
 
         # Run the scraping process
@@ -402,9 +400,13 @@ def main():
     except Exception as e:
         logging.error(f"An error occurred during scraping: {e}")
     finally:
-        # Remove the PID file
-        if os.path.exists(PID_FILE):
-            os.remove(PID_FILE)
+        # Remove the PID file if it contains our PID
+        if os.path.exists(pid_file):
+            with open(pid_file, "r") as f:
+                pid_in_file = int(f.read())
+            if pid_in_file == os.getpid():
+                os.remove(pid_file)
+                logging.info("PID file removed.")
 
 
 if __name__ == "__main__":
