@@ -1,10 +1,11 @@
 import asyncio
-import os
 
 from motor.motor_asyncio import AsyncIOMotorClient
 from passlib.context import CryptContext
 
-MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017/scraper_db")
+from config import settings
+
+MONGO_URL = settings.MONGO_URL
 print(f"Connecting to MongoDB at {MONGO_URL}")
 
 client = AsyncIOMotorClient(MONGO_URL)
@@ -20,7 +21,7 @@ async def test_connection():
         print("Error connecting to MongoDB:", e)
 
 
-# Ensure we properly await the connection check
+# Ensure to properly await for the connection check
 async def main():
     await test_connection()
 

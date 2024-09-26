@@ -2,26 +2,35 @@ version: '3.8'
 
 services:
   scraper-api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.app
     container_name: scraper-container
-    volumes:
-      - .:/app
-    ports:
-      - "8000:8000"
     depends_on:
       - mongodb
-    env_file:
-      - .env.dev
-    restart: unless-stopped
     networks:
       - internal_network
+    env_file:
+      - .env.prod
+    restart: unless-stopped
+
+  tor:
+    build:
+      context: .
+      dockerfile: Dockerfile.tor
+    container_name: tor
+    depends_on:
+      - scraper-api
+    networks:
+      - internal_network
+    volumes:
+      - tor_data:/var/lib/tor
+    restart: unless-stopped
 
   mongodb:
     image: mongo:5.0
     container_name: mongodb
-    restart: always
-    ports:
-      - "27017:27017"
+    restart: unless-stopped
     volumes:
       - mongo_data:/data/db
     networks:
@@ -32,3 +41,4 @@ networks:
 
 volumes:
   mongo_data:
+  tor_data:

@@ -16,7 +16,7 @@ from auth import (ACCESS_TOKEN_EXPIRE_MINUTES, authenticate_user,
                   get_current_user, get_password_hash, users_collection,
                   verify_password)
 from config import ARCHIVE_FILENAME, PID_FILE, RESULTS_DIR
-from models import PasswordChangeRequest, User
+from models import User
 from setup import setup_api_logging
 
 setup_api_logging()

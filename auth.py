@@ -1,5 +1,4 @@
 import logging
-import os
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -9,13 +8,12 @@ from jose import JWTError, jwt
 from motor.motor_asyncio import AsyncIOMotorClient
 from passlib.context import CryptContext
 
-from config import ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM, SECRET_KEY
+from config import ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM, SECRET_KEY, settings
 from models import User
 
 # Password hashing
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
-
-MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017/scraper_db")
+MONGO_URL = settings.MONGO_URL
 print(f"Connecting to MongoDB at {MONGO_URL}")
 
 client = AsyncIOMotorClient(MONGO_URL)

@@ -1,15 +1,22 @@
-# Install main python image
-FROM python:3.10-slim as build
+# Use a slim Python base image
+FROM python:3.10-slim
 
 # Install necessary packages including Tor and binary dependencies for Selenium
-RUN apt-get update && apt-get install -y unzip curl tor && \
+RUN apt-get update && apt-get install -y unzip curl && \
     curl -Lo "/tmp/chromedriver-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/122.0.6261.94/linux64/chromedriver-linux64.zip" && \
     curl -Lo "/tmp/chrome-linux64.zip" "https://storage.googleapis.com/chrome-for-testing-public/122.0.6261.94/linux64/chrome-linux64.zip" && \
     unzip /tmp/chromedriver-linux64.zip -d /opt/ && \
     unzip /tmp/chrome-linux64.zip -d /opt/
 
-# Install additional packages for Chrome to run (also in AWS Lambda)
-RUN apt-get install -y --no-install-recommends \
+# Install necessary system  packages and install additional packages for Chrome to run (also in AWS Lambda)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libssl-dev \
+    libffi-dev \
+    libpq-dev \
+    gcc \
+    unzip \
+    curl \
     wget \
     gnupg \
     libasound2 \
@@ -24,8 +31,7 @@ RUN apt-get install -y --no-install-recommends \
     libxrandr2 \
     libxss1 \
     libxtst6 \
-    xdg-utils \
-    && rm -rf /var/lib/apt/lists/*
+    xdg-utils
 
 # Install Python packages
 RUN pip install selenium==4.18.1 \
@@ -42,20 +48,16 @@ RUN pip install selenium==4.18.1 \
     && pip install jinja2~=3.1.4 \
     && pip install psutil~=6.0.0 \
     && pip install APScheduler~=3.10.4 \
-    && pip install python-multipart~=0.0.10 \
-    && pip install pydantic-settings~=2.5.2
-
-# Set Tor to listen on 9050
-RUN echo "SocksPort 127.0.0.1:9050" >> /etc/tor/torrc
+    && pip install python-multipart~=0.0.10
 
 # Set the working directory
 WORKDIR /app
 
-# Copy your application code
+# Copy the application code
 COPY . /app
 
-# Expose port 8000 for FastAPI
+# Expose port 8000 (default for Uvicorn)
 EXPOSE 8000
 
-# CMD is set to start Tor and Uvicorn, sleep for 5 seconds to allow Mongodb to start
-CMD ["sh", "-c", "sleep 5 && service tor start && uvicorn main:app --host 0.0.0.0 --port 8000"]
+# Start the FastAPI application with Uvicorn
+CMD ["sh", "-c", "sleep 10 && uvicorn main:app --host 0.0.0.0 --port 8000"]

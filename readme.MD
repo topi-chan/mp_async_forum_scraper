@@ -8,4 +8,8 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 docker-compose up -d --build
 docker-compose exec scraper-api /bin/bash
-uvicorn main:app --host 0.0.0.0 --port 8000
+
+create torrc file
+docker-compose -f docker-compose.prod.yml up -d
+docker-compose ps
+docker-compose exec tor cat <HiddenServiceDir/hostname>
