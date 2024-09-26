@@ -56,5 +56,5 @@ COPY . /app
 # Expose port 8000 for FastAPI
 EXPOSE 8000
 
-# CMD is set to start Tor and Uvicorn, but will be overridden by Docker Compose
+# CMD is set to start Tor and Uvicorn, sleep for 5 seconds to allow Mongodb to start
 CMD ["sh", "-c", "sleep 5 && service tor start && uvicorn main:app --host 0.0.0.0 --port 8000"]

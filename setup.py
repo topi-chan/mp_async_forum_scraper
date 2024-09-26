@@ -1,9 +1,9 @@
 import logging
 import random
+import sys
 from logging import StreamHandler
 from logging.handlers import QueueHandler, QueueListener, RotatingFileHandler
 from multiprocessing import Queue
-import sys
 from tempfile import mkdtemp
 
 import aiohttp
@@ -187,6 +187,7 @@ async def async_get_random_user_agent_and_referrer(
         referer = random.choice(referers)
 
     return {"User-Agent": user_agent, "Referer": referer}
+
 
 def setup_api_logging():
     """

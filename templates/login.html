@@ -4,7 +4,7 @@
     <title>Login</title>
     <script>
         async function login(event) {
-            event.preventDefault(); // Prevent form from submitting the default way
+            event.preventDefault();
             const username = document.getElementById("username").value;
             const password = document.getElementById("password").value;
 
@@ -17,13 +17,19 @@
                     body: new URLSearchParams({
                         "username": username,
                         "password": password
-                    })
+                    }),
+                    credentials: 'include'  // Include cookies in the request
                 });
 
                 if (response.ok) {
-                    const data = await response.json();
-                    localStorage.setItem("token", data.access_token);  // Store the JWT in localStorage
-                    window.location.href = "/status";  // Redirect to status page
+                    const data = await response.json(); // Fetch response JSON data
+                    if (data.password_needs_reset) {
+                        // Redirect to reset-password page if password reset is needed
+                        window.location.href = "/reset-password";
+                    } else {
+                        // Redirect to status page if no password reset is needed
+                        window.location.href = "/status";
+                    }
                 } else {
                     const errorData = await response.json();
                     document.getElementById("error").innerText = errorData.detail || "Login failed";
