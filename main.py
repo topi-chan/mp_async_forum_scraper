@@ -99,10 +99,9 @@ async def check_status(
             "scraper_username": scraper_username,
             "current_user": current_user,
             "datetime": datetime,
-            "timedelta": timedelta
+            "timedelta": timedelta,
         },
     )
-
 
 
 @app.post("/scrape")
