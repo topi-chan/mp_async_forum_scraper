@@ -112,11 +112,12 @@ def get_random_user_agent_and_referrer():
     return {"User-Agent": user_agent, "Referer": referer}
 
 
-def setup_logging(queue: Queue = None) -> None:
+def setup_logging(queue: Queue = None, level=logging.DEBUG) -> None:
     """
     Setup logging configuration with optional multiprocessing queue.
 
     :param queue: Optional multiprocessing queue for logging.
+    :param level: Logging level to set
     """
     log_format = "%(asctime)s [PID: %(process)d] %(levelname)s: %(message)s"
     root_logger = logging.getLogger()
@@ -126,12 +127,12 @@ def setup_logging(queue: Queue = None) -> None:
 
     if queue:
         queue_handler = QueueHandler(queue)
-        root_logger.setLevel(logging.DEBUG)
+        root_logger.setLevel(level)
         root_logger.addHandler(queue_handler)
     else:
         console_handler = StreamHandler()
         console_handler.setFormatter(logging.Formatter(log_format))
-        root_logger.setLevel(logging.DEBUG)
+        root_logger.setLevel(level)
         root_logger.addHandler(console_handler)
 
     selenium_logger = logging.getLogger("selenium")

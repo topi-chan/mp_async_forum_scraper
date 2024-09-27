@@ -1,13 +1,12 @@
+import asyncio
 import functools
 import logging
 import os
 import re
 import subprocess
-import sys
 import tarfile
 import time
 import unicodedata
-from logging.handlers import RotatingFileHandler
 
 import aiofiles
 
@@ -204,3 +203,60 @@ def create_tar_archive(results_dir: str = RESULTS_DIR) -> str:
         tar.add(FILES_DIR, arcname=os.path.basename(FILES_DIR))
     logging.info(f"Created tar archive at {archive_path}")
     return archive_path
+
+
+def async_retry(
+    exceptions: tuple[type[BaseException], ...],
+    tries: int = 3,
+    delay: int = 2,
+    backoff: float = 1.5,
+) -> callable:
+    """
+    Async retry decorator to retry the decorated async function in case of specified exceptions.
+
+    :param exceptions: A tuple of exception types to catch and retry on.
+    :param tries: Number of attempts.
+    :param delay: Initial delay between retries.
+    :param backoff: Multiplier to increase the delay between each retry.
+    :return: The decorated async function with retry logic.
+    """
+
+    def decorator(func: callable) -> callable:
+        if asyncio.iscoroutinefunction(func):
+
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                _tries, _delay = tries, delay
+                while _tries > 1:
+                    try:
+                        return await func(*args, **kwargs)
+                    except exceptions as e:
+                        logging.warning(
+                            f"{func.__name__} failed with {e}, retrying in {_delay} seconds..."
+                        )
+                        await asyncio.sleep(_delay)
+                        _tries -= 1
+                        _delay *= backoff
+                return await func(*args, **kwargs)  # Last try
+
+            return async_wrapper
+        else:
+
+            @functools.wraps(func)
+            def sync_wrapper(*args, **kwargs):
+                _tries, _delay = tries, delay
+                while _tries > 1:
+                    try:
+                        return func(*args, **kwargs)
+                    except exceptions as e:
+                        logging.warning(
+                            f"{func.__name__} failed with {e}, retrying in {_delay} seconds..."
+                        )
+                        time.sleep(_delay)
+                        _tries -= 1
+                        _delay *= backoff
+                return func(*args, **kwargs)  # Last try
+
+            return sync_wrapper
+
+    return decorator

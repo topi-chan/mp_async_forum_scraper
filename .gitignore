@@ -3,3 +3,5 @@ config.py
 .env.dev
 torrc
 /backup_templates
+login_page.html
+post_login_page.html
