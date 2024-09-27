@@ -215,3 +215,52 @@ async def get_token_from_cookie(request: Request) -> str:
             headers={"WWW-Authenticate": "Bearer"},
         )
     return param
+
+
+async def get_current_user_from_cookie(
+    token: str = Depends(get_token_from_cookie),
+) -> User:
+    """
+    Get the current user from the token extracted from a cookie.
+
+    :param token: The JWT token extracted from the cookie.
+    :return: The current User object.
+    :raises HTTPException: If the token is invalid or the user is not found.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials from cookie",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: Optional[str] = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    user = await get_user(username)
+    if user is None:
+        raise credentials_exception
+    return user
+
+
+async def get_current_active_user_from_cookie(
+    current_user: User = Depends(get_current_user_from_cookie),
+) -> User:
+    """
+    Get the current active user from the token extracted from a cookie.
+
+    :param current_user: The current User object extracted from the cookie.
+    :return: The current active User object.
+    :raises HTTPException: If the user is inactive or needs a password reset.
+    """
+    if not current_user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    if current_user.password_needs_reset:
+        raise HTTPException(
+            status_code=403,
+            detail="Password reset required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return current_user

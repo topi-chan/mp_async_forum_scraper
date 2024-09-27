@@ -2,32 +2,10 @@
 <html>
 <head>
     <title>Logout</title>
-    <script>
-        async function logout(event) {
-            event.preventDefault();
-            try {
-                const response = await fetch("/logout", {
-                    method: "POST",
-                    credentials: "include",  // Include cookies in the request
-                });
-
-                if (response.ok) {
-                    window.location.href = "/login";  // Redirect to login page after successful logout
-                } else {
-                    const errorData = await response.json();
-                    document.getElementById("error").innerText = errorData.detail || "Logout failed";
-                }
-            } catch (error) {
-                document.getElementById("error").innerText = "Error during logout. Try again.";
-            }
-        }
-    </script>
 </head>
 <body>
     <h1>Logout</h1>
-    <form onsubmit="logout(event)">
-        <button type="submit">Logout</button>
-    </form>
-    <p id="error" style="color: red;"></p>
+    <p>You have been logged out.</p>
+    <a href="/login">Go to Login Page</a>
 </body>
 </html>
