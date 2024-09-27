@@ -5,8 +5,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import psutil
-from fastapi import (Depends, FastAPI, Form, HTTPException, Request, Response,
-                     status)
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.templating import Jinja2Templates

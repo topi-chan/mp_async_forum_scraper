@@ -51,7 +51,7 @@ RUN echo "SocksPort 127.0.0.1:9050" >> /etc/tor/torrc
 # Set the working directory
 WORKDIR /app
 
-# Copy your application code
+# Copy application code
 COPY . /app
 
 # Expose port 8000 for FastAPI

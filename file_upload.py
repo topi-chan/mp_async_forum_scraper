@@ -1,15 +1,15 @@
 import requests
 
-from config import ARCHIVE_FILENAME
+from config import ARCHIVE_FILENAME, TOR_PROXY_URL
 
-proxies = {
-    "http": "socks5h://localhost:9050",
-    "https": "socks5h://localhost:9050",
+proxies: dict[str, str] = {
+    "http": TOR_PROXY_URL,
+    "https": TOR_PROXY_URL,
 }
 
-file_path = ARCHIVE_FILENAME
+file_path: str = ARCHIVE_FILENAME
 with open(file_path, "rb") as file_to_upload:
-    response = requests.post(
+    response: requests.Response = requests.post(
         "https://file.io", files={"file": file_to_upload}, proxies=proxies
     )
 
