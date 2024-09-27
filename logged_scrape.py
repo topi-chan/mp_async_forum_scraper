@@ -16,24 +16,39 @@ setup_logging()
 
 
 class LoggedInForumScraper(ForumScraper):
-    def __init__(self, username, password, *args, **kwargs):
+    def __init__(self, username: str, password: str, *args, **kwargs) -> None:
+        """
+        Initialize the LoggedInForumScraper.
+
+        Args:
+            username (str): The username for the forum.
+            password (str): The password for the forum.
+            *args: Additional positional arguments.
+            **kwargs: Additional keyword arguments.
+        """
         super().__init__(
             main_forum_url=MAIN_FORUM_URL, base_url=MAIN_FORUM_URL, *args, **kwargs
         )
-        self.login_url = LOGIN_URL
-        self.username = username
-        self.password = password
-        self.members = []
-        self.logout = LOGOUT_URL
-        self.group_url = GROUP_URL
-        self.members_divs = MEMBERS_DIVS
-        self.members_class = MEMBERS_CLASS
-        self.group_id = GROUP_ID
+        self.login_url: str = LOGIN_URL
+        self.username: str = username
+        self.password: str = password
+        self.members: list[tuple[str, str]] = []
+        self.logout: str = LOGOUT_URL
+        self.group_url: str = GROUP_URL
+        self.members_divs: str = MEMBERS_DIVS
+        self.members_class: str = MEMBERS_CLASS
+        self.group_id: int = GROUP_ID
 
     @async_retry((Exception,), tries=3, delay=8)
     async def login(self, session: aiohttp.ClientSession) -> bool:
         """
         Log in to the forum and maintain session cookies.
+
+        Args:
+            session (aiohttp.ClientSession): The aiohttp session to use for the login.
+
+        Returns:
+            bool: True if login was successful, False otherwise.
         """
         try:
             login_url = f"{self.main_forum_url}{self.login_url}"
@@ -57,7 +72,7 @@ class LoggedInForumScraper(ForumScraper):
                 f.write(login_page_html)
 
             # Step 2: Parse the login page to extract hidden fields
-            soup = BeautifulSoup(login_page_html, "html.parser")
+            soup: BeautifulSoup = BeautifulSoup(login_page_html, "html.parser")
             login_form = soup.find("form", {"id": "login"})
             if not login_form:
                 logging.error("Login form not found on the login page.")
@@ -122,7 +137,7 @@ class LoggedInForumScraper(ForumScraper):
                 # Step 4: Verify login is successful
                 if (
                     self.logout in post_login_html
-                    or "Wyloguj"
+                    or "Wyloguj" in post_login_html
                     or "Log out" in post_login_html
                 ):
                     logging.info("Login successful.")
@@ -150,21 +165,29 @@ class LoggedInForumScraper(ForumScraper):
     ) -> None:
         """
         Fetch the list of group members and store them as a class attribute.
+
+        Args:
+            session (aiohttp.ClientSession): The aiohttp session to use for fetching members.
+            group_id (int): The ID of the group to fetch members from.
+            start_indices (list[int]): The start indices for pagination.
+
+        Returns:
+            None
         """
         try:
             members = []
             start_indices = start_indices  # Only fetch pages with defined start indices
 
             for start in start_indices:
-                headers = self.get_random_header()
-                group_url = f"{self.base_url}{self.group_url}{group_id}&start={start}"
+                headers: dict = self.get_random_header()
+                group_url: str = f"{self.base_url}{self.group_url}{group_id}&start={start}"
                 logging.info(f"Fetching group members from: {group_url}")
 
                 async with session.get(group_url, headers=headers) as response:
                     response.raise_for_status()
-                    html = await response.text()
+                    html: str = await response.text()
 
-                soup = BeautifulSoup(html, "html.parser")
+                soup: BeautifulSoup = BeautifulSoup(html, "html.parser")
 
                 # Find member elements
                 member_divs = soup.find_all("div", class_=self.members_divs)
@@ -176,8 +199,8 @@ class LoggedInForumScraper(ForumScraper):
                 for member_div in member_divs:
                     username_elem = member_div.find("a", class_=self.members_class)
                     if username_elem:
-                        username = username_elem.text.strip()
-                        user_profile_url = username_elem["href"]
+                        username: str = username_elem.text.strip()
+                        user_profile_url: str = username_elem["href"]
                         members.append((username, user_profile_url))
 
             logging.info(f"Found {len(members)} members in group {group_id}.")
@@ -186,13 +209,16 @@ class LoggedInForumScraper(ForumScraper):
         except Exception as e:
             logging.error(f"Exception during getting group members: {e}")
 
-    async def run(self):
+    async def run(self) -> None:
         """
         Run the scraper to login and fetch group members.
+
+        Returns:
+            None
         """
         connector = aiohttp_socks.ProxyConnector.from_url(TOR_PROXY_URL)
         async with aiohttp.ClientSession(connector=connector) as session:
-            logged_in = await self.login(session)
+            logged_in: bool = await self.login(session)
             if logged_in:
                 await self.get_group_members(session, group_id=self.group_id)
                 # Process the members list as needed
@@ -205,8 +231,8 @@ class LoggedInForumScraper(ForumScraper):
 # Entry point
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    username = FORUM_USERNAME
-    password = FORUM_PASSWORD
+    username: str = FORUM_USERNAME
+    password: str = FORUM_PASSWORD
 
-    scraper = LoggedInForumScraper(username, password)
+    scraper: LoggedInForumScraper = LoggedInForumScraper(username, password)
     asyncio.run(scraper.run())
