@@ -1,19 +1,26 @@
 # Use the official Alpine Linux image
 FROM alpine:latest
 
-# Install Tor
-RUN apk update && apk add --no-cache tor
+# Install Tor and dependencies
+RUN apk update && apk add --no-cache tor curl bash
+
+# Verify that the 'tor' user exists
+RUN grep '^tor:' /etc/passwd
 
 # Copy the Tor configuration file
 COPY torrc /etc/tor/torrc
 
-# Create the Tor hidden service directory and set permissions
+# Create the Tor hidden service directory and set ownership and permissions
 RUN mkdir -p /var/lib/tor/hidden_service && \
-    chown -R tor /var/lib/tor/hidden_service && \
+    chown -R tor:65533 /var/lib/tor/hidden_service && \
     chmod 700 /var/lib/tor/hidden_service
 
-# Expose the Tor SOCKS port (optional)
-EXPOSE 9050 9051
+# Download and set up wait-for-it.sh
+RUN curl -o /wait-for-it.sh https://raw.githubusercontent.com/vishnubob/wait-for-it/master/wait-for-it.sh && \
+    chmod +x /wait-for-it.sh
 
-# Run Tor as the default command
-CMD ["tor", "-f", "/etc/tor/torrc"]
+# Switch to 'tor' user for security
+USER tor
+
+# Run Tor after ensuring scraper-api is ready
+CMD ["/wait-for-it.sh", "scraper-api:8000", "--", "tor", "-f", "/etc/tor/torrc"]

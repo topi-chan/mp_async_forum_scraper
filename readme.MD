@@ -10,6 +10,11 @@ docker-compose up -d --build
 docker-compose exec scraper-api /bin/bash
 
 create torrc file
+docker-compose -f docker-compose.prod.yml up --build (--no-cache if needed -d if needed or just --build)
 docker-compose -f docker-compose.prod.yml up -d
+docker-compose -f docker-compose.prod.yml down
 docker-compose ps
-docker-compose exec tor cat <HiddenServiceDir/hostname>
+docker-compose exec tor bash
+cat <HiddenServiceDir/hostname>
+docker-compose exec scraper-api /bin/bash
+docker-compose -f docker-compose.prod.yml logs -f scraper-api

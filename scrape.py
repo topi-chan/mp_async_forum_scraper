@@ -13,18 +13,18 @@ from bs4 import BeautifulSoup
 from config import (BASE_URL, EXCLUDE_SUB_SUBFORUM_TOPIC,
                     EXCLUDE_SUB_SUBFORUM_URL, EXCLUDED_TOPIC_NAMES,
                     MAIN_FORUM_URL, NEXT_BUTTON, NEXT_BUTTON_ICON, PID_FILE,
-                    SUB_SUBFORUM_NAME, SUBFORUM_LINK, SUBFORUM_NAME)
+                    SUB_SUBFORUM_NAME, SUBFORUM_LINK, SUBFORUM_NAME, TOR_PROXY_URL)
 from setup import (get_random_user_agent_and_referrer, listener_process,
                    setup_logging)
 from utils import (create_tar_archive, retry, save_topics, start_tor_service,
                    wipe_files_directory)
 
-# Start Tor service before the script runs
-try:
-    start_tor_service()
-except Exception as e:
-    print(f"Failed to start Tor after retries: {e}")
-    quit()
+# Separately start Tor service before the script runs - optional for development
+# try:
+#     start_tor_service()
+# except Exception as e:
+#     print(f"Failed to start Tor after retries: {e}")
+#     quit()
 
 
 class ForumScraper:
@@ -282,7 +282,7 @@ async def scrape_subforum_concurrently(
     :param subforum_link: The URL of the subforum.
     """
     async with aiohttp.ClientSession(
-        connector=aiohttp_socks.ProxyConnector.from_url("socks5://127.0.0.1:9050")
+        connector=aiohttp_socks.ProxyConnector.from_url(TOR_PROXY_URL)
     ) as session:
         all_topics = []
 
@@ -361,7 +361,7 @@ async def run_scraping() -> None:
     scraper = ForumScraper()
     await scraper.prefetch_headers(count=100)
     async with aiohttp.ClientSession(
-        connector=aiohttp_socks.ProxyConnector.from_url("socks5://127.0.0.1:9050")
+        connector=aiohttp_socks.ProxyConnector.from_url(TOR_PROXY_URL)
     ) as session:
         await scraper.extract_subforum_links(session)
     if scraper.subforum_links:

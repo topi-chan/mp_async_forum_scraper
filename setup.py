@@ -11,6 +11,8 @@ import requests
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 
+from config import TOR_PROXY_URL
+
 # Hardcoded fallback User-Agent and Referrers
 user_agents = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/91.0.864.59 Safari/537.36",
@@ -65,7 +67,7 @@ def setup_browser():
     user_agent, referer = get_random_user_agent_and_referrer()
     options.add_argument(f"user-agent={user_agent}")
     options.add_argument(f"referer={referer}")
-    options.add_argument("--proxy-server=socks5://127.0.0.1:9050")
+    options.add_argument(f"--proxy-server={TOR_PROXY_URL}")
 
     prefs = {
         "download.default_directory": mkdtemp(),
@@ -89,8 +91,8 @@ def get_random_user_agent_and_referrer():
     try:
         # Set up proxies to use Tor
         proxies = {
-            "http": "socks5://127.0.0.1:9050",
-            "https": "socks5://127.0.0.1:9050",
+            "http": TOR_PROXY_URL,
+            "https": TOR_PROXY_URL,
         }
 
         # Fetch a random user-agent using an external API via Tor

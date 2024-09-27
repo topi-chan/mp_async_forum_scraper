@@ -48,7 +48,8 @@ RUN pip install selenium==4.18.1 \
     && pip install jinja2~=3.1.4 \
     && pip install psutil~=6.0.0 \
     && pip install APScheduler~=3.10.4 \
-    && pip install python-multipart~=0.0.10
+    && pip install python-multipart~=0.0.10 \
+    && pip install pydantic-settings~=2.5.2
 
 # Set the working directory
 WORKDIR /app
