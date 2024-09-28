@@ -43,7 +43,9 @@ RUN pip install selenium==4.18.1 \
     && pip install psutil~=6.0.0 \
     && pip install APScheduler~=3.10.4 \
     && pip install python-multipart~=0.0.10 \
-    && pip install pydantic-settings~=2.5.2
+    && pip install pydantic-settings~=2.5.2 \
+    && pip install dateparser~=1.2.0 \
+    && pip install pandas~=2.2.3
 
 # Set Tor to listen on 9050
 RUN echo "SocksPort 127.0.0.1:9050" >> /etc/tor/torrc

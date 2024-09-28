@@ -7,8 +7,10 @@ import subprocess
 import tarfile
 import time
 import unicodedata
+from datetime import datetime
 
 import aiofiles
+import dateparser
 
 from config import ARCHIVE_FILENAME, FILES_DIR, RESULTS_DIR
 
@@ -260,3 +262,21 @@ def async_retry(
             return sync_wrapper
 
     return decorator
+
+
+def parse_date(date_str: str) -> datetime | None:
+    """
+    Parse a date string in Polish and return a datetime object.
+
+    Args:
+        date_str (str): The date string to parse.
+
+    Returns:
+        Optional[datetime]: The parsed datetime object, or None if parsing failed.
+    """
+    try:
+        date = dateparser.parse(date_str, languages=["pl"])
+        return date
+    except Exception as e:
+        logging.error(f"Date parsing failed for '{date_str}': {e}")
+        return None

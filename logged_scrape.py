@@ -1,16 +1,19 @@
 import asyncio
 import logging
+from datetime import datetime, timedelta
 
 import aiohttp
 import aiohttp_socks
+import pandas as pd
 from bs4 import BeautifulSoup
 
-from config import (FORUM_PASSWORD, FORUM_USERNAME, GROUP_ID, GROUP_URL,
-                    LOGIN_URL, LOGOUT_URL, MAIN_FORUM_URL, MEMBERS_CLASS,
-                    MEMBERS_DIVS, TOR_PROXY_URL)
+from config import (ACTION_ELEMENT, ACTIVITY_CLASS, DATE_ELEMENT,
+                    FORUM_PASSWORD, FORUM_USERNAME, GROUP_ID, GROUP_URL,
+                    LOGIN_URL, LOGOUT_URL, LOGS_URL, MAIN_FORUM_URL,
+                    MEMBERS_CLASS, MEMBERS_DIVS, TOR_PROXY_URL)
 from scrape import ForumScraper
 from setup import setup_logging
-from utils import async_retry
+from utils import async_retry, parse_date
 
 setup_logging()
 
@@ -38,6 +41,13 @@ class LoggedInForumScraper(ForumScraper):
         self.members_divs: str = MEMBERS_DIVS
         self.members_class: str = MEMBERS_CLASS
         self.group_id: int = GROUP_ID
+        self.logs_url: str = LOGS_URL
+        self.activity_class: str = ACTIVITY_CLASS
+        self.action_element: str = ACTION_ELEMENT
+        self.date_element: str = DATE_ELEMENT
+        self.activities_df = pd.DataFrame(
+            columns=["Moderator", "Action", "Date", "Details"]
+        )
 
     @async_retry((Exception,), tries=3, delay=8)
     async def login(self, session: aiohttp.ClientSession) -> bool:
@@ -180,7 +190,9 @@ class LoggedInForumScraper(ForumScraper):
 
             for start in start_indices:
                 headers: dict = self.get_random_header()
-                group_url: str = f"{self.base_url}{self.group_url}{group_id}&start={start}"
+                group_url: str = (
+                    f"{self.base_url}{self.group_url}{group_id}&start={start}"
+                )
                 logging.info(f"Fetching group members from: {group_url}")
 
                 async with session.get(group_url, headers=headers) as response:
@@ -209,9 +221,90 @@ class LoggedInForumScraper(ForumScraper):
         except Exception as e:
             logging.error(f"Exception during getting group members: {e}")
 
+    async def scrape_activity_logs(
+        self,
+        session: aiohttp.ClientSession,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> None:
+        """
+        Scrape moderator activity logs between start_date and end_date.
+        """
+        try:
+            page = 0
+            while True:
+                headers = self.get_random_header()
+                logs_url = f"{self.base_url}{self.logs_url}{page * 15}"
+                logging.info(f"Fetching activity logs from: {logs_url}")
+
+                async with session.get(logs_url, headers=headers) as response:
+                    response.raise_for_status()
+                    html = await response.text()
+
+                soup = BeautifulSoup(html, "html.parser")
+
+                # Find all activity rows
+                activity_rows = soup.find_all("div", class_=self.activity_class)
+                if not activity_rows:
+                    logging.info("No more activities found.")
+                    break  # No more activities
+
+                for row in activity_rows:
+                    # Extract action type
+                    action_elem = row.find("div", class_=self.action_element)
+                    action_type_elem = action_elem.find("strong")
+                    if action_type_elem:
+                        action_type = action_type_elem.text.strip()
+                    else:
+                        action_type = "Unknown"
+
+                    # Extract moderator name
+                    moderator_elem = row.find("a", class_=self.members_class)
+                    if moderator_elem:
+                        moderator_name = moderator_elem.text.strip()
+                    else:
+                        moderator_name = "Unknown"
+
+                    # Extract date
+                    date_elem = row.find_all("div", class_=self.date_element)[-1]
+                    date_str = date_elem.text.strip()
+
+                    # Parse date string
+                    action_date = parse_date(date_str)
+                    if action_date is None:
+                        continue  # Skip if date parsing failed
+
+                    # Check if date is within the desired range
+                    if action_date < start_date:
+                        logging.info("Reached the start date. Stopping.")
+                        return  # Stop scraping as we've passed the desired date range
+
+                    if action_date > end_date:
+                        continue  # Skip actions beyond the end date
+
+                    # Additional details
+                    details = action_elem.get_text(separator=" ", strip=True)
+
+                    # Append to DataFrame
+                    action_data = {
+                        "Moderator": moderator_name,
+                        "Action": action_type,
+                        "Date": action_date,
+                        "Details": details,
+                    }
+                    self.activities_df = self.activities_df.append(
+                        action_data, ignore_index=True
+                    )
+
+                # Move to the next page
+                page += 1
+
+        except Exception as e:
+            logging.error(f"Exception during scraping activity logs: {e}")
+
     async def run(self) -> None:
         """
-        Run the scraper to login and fetch group members.
+        Run the scraper to login and fetch group members and activities.
 
         Returns:
             None
@@ -220,10 +313,31 @@ class LoggedInForumScraper(ForumScraper):
         async with aiohttp.ClientSession(connector=connector) as session:
             logged_in: bool = await self.login(session)
             if logged_in:
+                # Fetch group members
                 await self.get_group_members(session, group_id=self.group_id)
-                # Process the members list as needed
-                for username, profile_url in self.members:
-                    print(f"User: {username}, Profile URL: {profile_url}")
+
+                # Define the date range for scraping activities
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=1)  # Adjust the period as needed
+
+                # Scrape moderator activities
+                await self.scrape_activity_logs(
+                    session, start_date=start_date, end_date=end_date
+                )
+
+                # Process the activities DataFrame
+                if not self.activities_df.empty:
+                    # Group actions by moderator and action type
+                    summary = (
+                        self.activities_df.groupby(["Moderator", "Action"])
+                        .size()
+                        .reset_index(name="Count")
+                    )
+                    print(summary)
+                    # Save the summary to a text file
+                    # summary.to_csv('activity_summary.txt', sep='\t', index=False)
+                else:
+                    print("No activities found in the specified date range.")
             else:
                 print("Login failed.")
 
