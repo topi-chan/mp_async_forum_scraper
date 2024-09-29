@@ -1,3 +1,5 @@
+# setup.py
+
 import logging
 import random
 import sys
@@ -5,11 +7,11 @@ from logging import StreamHandler
 from logging.handlers import QueueHandler, QueueListener, RotatingFileHandler
 from multiprocessing import Queue
 from tempfile import mkdtemp
-
-import aiohttp
-import requests
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
+import aiohttp
+import requests
+import undetected_chromedriver as uc
 
 from config import TOR_PROXY_URL
 
@@ -36,13 +38,12 @@ referers = (
 def setup_browser():
     """
     Setup Selenium browser with specific options and preferences to run
-    in lightweight mode, also on AWS Lambda container.
+    in lightweight mode.
 
     :return: Configured Selenium WebDriver instance.
     """
-    options = webdriver.ChromeOptions()
+    options = uc.ChromeOptions()
     options.binary_location = "/opt/chrome-linux64/chrome"
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_argument("--disable-infobars")
     options.add_argument("--disable-extensions")
     options.add_argument("--no-first-run")
@@ -78,6 +79,7 @@ def setup_browser():
     }
     options.add_experimental_option("prefs", prefs)
 
+    # Initialize undetected_chromedriver
     svc = ChromeService(executable_path="/opt/chromedriver-linux64/chromedriver")
     return webdriver.Chrome(service=svc, options=options)
 
@@ -86,7 +88,7 @@ def get_random_user_agent_and_referrer():
     """
     Fetch random User-Agent and Referer from an API using Tor.
 
-    :return: Dictionary containing User-Agent and Referer.
+    :return: Tuple containing User-Agent and Referer.
     """
     try:
         # Set up proxies to use Tor
@@ -96,8 +98,10 @@ def get_random_user_agent_and_referrer():
         }
 
         # Fetch a random user-agent using an external API via Tor
-        response = requests.get("https://api.apicagent.com", proxies=proxies).json()
-        user_agent = response.get(
+        response = requests.get("https://api.apicagent.com", proxies=proxies, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        user_agent = data.get(
             "user-agent", random.choice(user_agents)
         )  # Fallback to hardcoded User-Agent
         referer = random.choice(referers)
@@ -109,7 +113,7 @@ def get_random_user_agent_and_referrer():
         user_agent = random.choice(user_agents)
         referer = random.choice(referers)
 
-    return {"User-Agent": user_agent, "Referer": referer}
+    return user_agent, referer
 
 
 def setup_logging(queue: Queue = None, level=logging.DEBUG) -> None:
