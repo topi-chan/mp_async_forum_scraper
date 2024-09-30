@@ -1,22 +1,18 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
 
 import aiohttp
 import aiohttp_socks
 import pandas as pd
 from bs4 import BeautifulSoup
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
 from config import (ACTION_ELEMENT, ACTIVITY_CLASS, DATE_ELEMENT,
                     FORUM_PASSWORD, FORUM_USERNAME, GROUP_ID, GROUP_URL,
                     LOGIN_URL, LOGOUT_URL, LOGS_URL, MAIN_FORUM_URL,
                     MEMBERS_CLASS, MEMBERS_DIVS, TOR_PROXY_URL)
 from scrape import ForumScraper
-from setup import setup_logging, setup_browser, get_random_user_agent_and_referrer
-from utils import async_retry, parse_date, get_cookies_from_selenium
+from setup import setup_logging
+from utils import async_retry
 
 setup_logging()
 
@@ -35,8 +31,6 @@ class LoggedInForumScraper(ForumScraper):
         super().__init__(
             main_forum_url=MAIN_FORUM_URL, base_url=MAIN_FORUM_URL, *args, **kwargs
         )
-        # Initialize the browser with the random User-Agent
-        self.browser = setup_browser()
         self.login_url: str = LOGIN_URL
         self.username: str = username
         self.password: str = password
@@ -50,61 +44,124 @@ class LoggedInForumScraper(ForumScraper):
         self.activity_class: str = ACTIVITY_CLASS
         self.action_element: str = ACTION_ELEMENT
         self.date_element: str = DATE_ELEMENT
-        self.activities_df = pd.DataFrame(
-            columns=["Moderator", "Action", "Date", "Details"]
-        )
+        self.activities: list[dict] = []  # Changed from DataFrame to list
 
-    def login(self):
+    @async_retry((Exception,), tries=3, delay=8)
+    async def login(self, session: aiohttp.ClientSession) -> bool:
         """
-        Log in to the forum using Selenium and return the browser instance.
+        Log in to the forum and maintain session cookies.
+
+        Args:
+            session (aiohttp.ClientSession): The aiohttp session to use for the login.
+
+        Returns:
+            bool: True if login was successful, False otherwise.
         """
         try:
             login_url = f"{self.main_forum_url}{self.login_url}"
-            logging.info(f"Navigating to login URL: {login_url}")
+            headers = self.get_random_header()
+            logging.debug(
+                f"Attempting to log in at URL: {login_url} with headers: {headers}"
+            )
 
-            # Apply anti-detection measures before navigating to the page
-            self.browser.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-                "source": """
-                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                    window.navigator.chrome = {runtime: {}};
-                    Object.defineProperty(navigator, 'languages', {get: () => ['en-GB', 'en']});
-                """
-            })
+            # Step 1: GET the login page
+            async with session.get(login_url, headers=headers) as response:
+                response.raise_for_status()
+                login_page_html = await response.text()
+                logging.debug(f"Received login page with status {response.status}")
+                logging.debug(f"Response headers: {response.headers}")
+                logging.debug(
+                    f"Session cookies after GET: {session.cookie_jar.filter_cookies(login_url)}"
+                )
 
-            self.browser.get(login_url)
+            # Save the login page HTML for debugging
+            with open("login_page.html", "w", encoding="utf-8") as f:
+                f.write(login_page_html)
 
-            # Wait for the username field to be present
-            wait = WebDriverWait(self.browser, 20)
-            wait.until(EC.presence_of_element_located((By.ID, "username")))
+            # Step 2: Parse the login page to extract hidden fields
+            soup: BeautifulSoup = BeautifulSoup(login_page_html, "html.parser")
+            login_form = soup.find("form", {"id": "login"})
+            if not login_form:
+                logging.error("Login form not found on the login page.")
+                return False
 
-            # Fill in the username and password fields
-            username_field = self.browser.find_element(By.ID, "username")
-            password_field = self.browser.find_element(By.ID, "password")
-            username_field.clear()
-            password_field.clear()
+            # Extract all form inputs and buttons
+            form_elements = login_form.find_all(["input", "button"])
+            form_data_list = []
+            for elem in form_elements:
+                name = elem.get("name")
+                value = elem.get("value", "")
+                if name:
+                    form_data_list.append((name, value))
 
-            # Using send_keys to simulate real typing
-            username_field.send_keys(self.username)
-            password_field.send_keys(self.password)
+            logging.debug(f"Extracted form fields: {form_data_list}")
 
-            # Click the login button
-            login_button = self.browser.find_element(By.NAME, "login")
-            login_button.click()
+            # Update username and password in form data
+            # Remove existing 'username' and 'password' entries
+            form_data_list = [
+                (name, value)
+                for (name, value) in form_data_list
+                if name not in ["username", "password"]
+            ]
+            form_data_list.append(("username", self.username))
+            form_data_list.append(("password", self.password))
 
-            # Wait for the logout link to confirm successful login
-            wait.until(EC.presence_of_element_located(
-                (By.XPATH, "//a[contains(@href, 'ucp.php?mode=logout')]")))
+            # Log the form data being sent, excluding the password
+            form_data_sanitized = [
+                (name, "******" if name == "password" else value)
+                for (name, value) in form_data_list
+            ]
+            logging.debug(
+                f"Form data to be sent in POST request: {form_data_sanitized}"
+            )
 
-            logging.info("Logged in successfully using Selenium.")
-            return self.browser
+            # Use the login URL as the Referer for the POST request
+            post_headers = headers.copy()
+            post_headers["Referer"] = login_url
+            post_headers["Origin"] = self.base_url
+
+            # Step 3: POST to the login URL, allow redirects
+            async with session.post(
+                login_url,
+                data=form_data_list,
+                headers=post_headers,
+                allow_redirects=True,
+            ) as response:
+                response.raise_for_status()
+                post_login_html = await response.text()
+                logging.debug(
+                    f"Received response from login POST with status {response.status}"
+                )
+                logging.debug(f"Response headers: {response.headers}")
+                logging.debug(
+                    f"Session cookies after POST: {session.cookie_jar.filter_cookies(login_url)}"
+                )
+
+            # Save the post-login page HTML for debugging
+            with open("post_login_page.html", "w", encoding="utf-8") as f:
+                f.write(post_login_html)
+
+                # Step 4: Verify login is successful
+                if (
+                    self.logout in post_login_html
+                    or "Wyloguj" in post_login_html
+                    or "Log out" in post_login_html
+                ):
+                    logging.info("Login successful.")
+                    return True
+                else:
+                    # Raise an exception to trigger the retry
+                    error_message = soup.find("div", class_="error")
+                    if error_message:
+                        msg = f"Login failed: {error_message.text.strip()}"
+                    else:
+                        msg = "Login failed. No error message found."
+                    logging.error(msg)
+                    raise Exception(msg)
+
         except Exception as e:
-            logging.error(f"Selenium login failed: {e}")
-            # Capture screenshot and page source for debugging
-            self.browser.save_screenshot('login_error.png')
-            with open('login_error.html', 'w', encoding='utf-8') as f:
-                f.write(self.browser.page_source)
-            self.browser.quit()
-            raise
+            logging.exception(f"Exception during login: {e}")
+            raise  # Re-raise the exception to trigger retry
 
     @async_retry((Exception,), tries=3, delay=4)
     async def get_group_members(
@@ -161,18 +218,13 @@ class LoggedInForumScraper(ForumScraper):
         except Exception as e:
             logging.error(f"Exception during getting group members: {e}")
 
-    async def scrape_activity_logs(
-        self,
-        session: aiohttp.ClientSession,
-        start_date: datetime,
-        end_date: datetime,
-    ) -> None:
+    async def scrape_activity_logs(self, session: aiohttp.ClientSession) -> None:
         """
-        Scrape moderator activity logs between start_date and end_date.
+        Scrape moderator activity logs from the first 5 pages, ignoring dates.
         """
         try:
             page = 0
-            while True:
+            while page < 115:
                 headers = self.get_random_header()
                 logs_url = f"{self.base_url}{self.logs_url}{page * 15}"
                 logging.info(f"Fetching activity logs from: {logs_url}")
@@ -190,51 +242,59 @@ class LoggedInForumScraper(ForumScraper):
                     break  # No more activities
 
                 for row in activity_rows:
-                    # Extract action type
+                    # Extract action and details
                     action_elem = row.find("div", class_=self.action_element)
-                    action_type_elem = action_elem.find("strong")
-                    if action_type_elem:
-                        action_type = action_type_elem.text.strip()
+                    if action_elem:
+                        # Extract action type
+                        action_type_elem = action_elem.find("strong")
+                        if action_type_elem:
+                            action_type_full = action_type_elem.text.strip()
+                            # Extract base action by taking the first two words
+                            base_action = " ".join(action_type_full.split()[:2])
+                        else:
+                            base_action = "Unknown"
+
+                        # Extract details - text after the action type
+                        details_parts = []
+                        for content in action_elem.contents:
+                            if content == action_type_elem:
+                                continue  # Skip the action type element
+                            if isinstance(content, str):
+                                details_parts.append(content.strip())
+                            else:
+                                details_parts.append(
+                                    content.get_text(separator=" ", strip=True)
+                                )
+                        details = " ".join(details_parts).strip()
                     else:
-                        action_type = "Unknown"
+                        base_action = "Unknown"
+                        details = ""
 
                     # Extract moderator name
-                    moderator_elem = row.find("a", class_=self.members_class)
-                    if moderator_elem:
-                        moderator_name = moderator_elem.text.strip()
+                    mod_user_div = row.find("div", class_=self.date_element)
+                    if mod_user_div:
+                        mod_name_elem = mod_user_div.find(
+                            "a", class_=self.members_class
+                        )
+                        if mod_name_elem:
+                            moderator_name = mod_name_elem.text.strip()
+                        else:
+                            # If no 'a' element, extract text directly
+                            moderator_name = (
+                                mod_user_div.get_text(separator=" ", strip=True)
+                                .replace("Opinie o użytkowniku:", "")
+                                .strip()
+                            )
                     else:
                         moderator_name = "Unknown"
 
-                    # Extract date
-                    date_elem = row.find_all("div", class_=self.date_element)[-1]
-                    date_str = date_elem.text.strip()
-
-                    # Parse date string
-                    action_date = parse_date(date_str)
-                    if action_date is None:
-                        continue  # Skip if date parsing failed
-
-                    # Check if date is within the desired range
-                    if action_date < start_date:
-                        logging.info("Reached the start date. Stopping.")
-                        return  # Stop scraping as we've passed the desired date range
-
-                    if action_date > end_date:
-                        continue  # Skip actions beyond the end date
-
-                    # Additional details
-                    details = action_elem.get_text(separator=" ", strip=True)
-
-                    # Append to DataFrame
+                    # Append to activities list
                     action_data = {
                         "Moderator": moderator_name,
-                        "Action": action_type,
-                        "Date": action_date,
+                        "Action": base_action,
                         "Details": details,
                     }
-                    self.activities_df = self.activities_df.append(
-                        action_data, ignore_index=True
-                    )
+                    self.activities.append(action_data)
 
                 # Move to the next page
                 page += 1
@@ -245,40 +305,49 @@ class LoggedInForumScraper(ForumScraper):
     async def run(self) -> None:
         """
         Run the scraper to login and fetch group members and activities.
-        """
-        # Step 1: Use Selenium to log in and get cookies
-        driver = await asyncio.to_thread(self.login)
-        cookies = get_cookies_from_selenium(driver)
-        driver.quit()  # Close the Selenium browser
 
-        # Step 2: Use aiohttp session with the extracted cookies
+        Returns:
+            None
+        """
         connector = aiohttp_socks.ProxyConnector.from_url(TOR_PROXY_URL)
         async with aiohttp.ClientSession(connector=connector) as session:
-            # Update session cookies
-            session.cookie_jar.update_cookies(cookies)
+            logged_in: bool = await self.login(session)
+            if logged_in:
+                # Fetch group members
+                await self.get_group_members(session, group_id=self.group_id)
 
-            # Define the date range for scraping activities
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=1)  # Adjust the period as needed
+                # Scrape moderator activities
+                await self.scrape_activity_logs(session)
 
-            # Scrape moderator activities
-            await self.scrape_activity_logs(
-                session, start_date=start_date, end_date=end_date
-            )
+                # Convert activities list to DataFrame
+                if self.activities:
+                    self.activities_df = pd.DataFrame(self.activities)
 
-            # Process the activities DataFrame
-            if not self.activities_df.empty:
-                # Group actions by moderator and action type
-                summary = (
-                    self.activities_df.groupby(["Moderator", "Action"])
-                    .size()
-                    .reset_index(name="Count")
-                )
-                print(summary)
-                # Optionally, save the summary to a text file
-                # summary.to_csv('activity_summary.txt', sep='\t', index=False)
+                    # Save detailed activities to CSV
+                    self.activities_df.to_csv(
+                        "activities.csv", index=False, encoding="utf-8-sig"
+                    )
+                    logging.info("Detailed activities saved to 'activities.csv'.")
+
+                    # Group actions by moderator and action type
+                    summary = (
+                        self.activities_df.groupby(["Moderator", "Action"])
+                        .size()
+                        .reset_index(name="Count")
+                    )
+
+                    # Save summary to CSV
+                    summary.to_csv(
+                        "activity_summary.csv", index=False, encoding="utf-8-sig"
+                    )
+                    logging.info("Activity summary saved to 'activity_summary.csv'.")
+
+                    # Optionally, print the summary
+                    print(summary)
+                else:
+                    print("No activities found.")
             else:
-                print("No activities found in the specified date range.")
+                print("Login failed.")
 
 
 # Entry point
@@ -287,5 +356,5 @@ if __name__ == "__main__":
     username: str = FORUM_USERNAME
     password: str = FORUM_PASSWORD
 
-    scraper: LoggedInForumScraper = LoggedInForumScraper(username, password)
+    scraper: LoggedInForumScraper = LoggedInForumScraper(username, password=password)
     asyncio.run(scraper.run())

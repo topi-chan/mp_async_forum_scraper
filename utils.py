@@ -281,6 +281,7 @@ def parse_date(date_str: str) -> datetime | None:
         logging.error(f"Date parsing failed for '{date_str}': {e}")
         return None
 
+
 def get_cookies_from_selenium(driver) -> dict:
     """
     Extract cookies from Selenium WebDriver and return as a dictionary.
@@ -288,5 +289,5 @@ def get_cookies_from_selenium(driver) -> dict:
     selenium_cookies = driver.get_cookies()
     cookies = {}
     for cookie in selenium_cookies:
-        cookies[cookie['name']] = cookie['value']
+        cookies[cookie["name"]] = cookie["value"]
     return cookies
