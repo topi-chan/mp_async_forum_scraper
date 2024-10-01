@@ -226,7 +226,7 @@ class LoggedInForumScraper(ForumScraper):
         try:
             page = 0
             self.headers = self.get_random_header()
-            while page < 115:
+            while page < 704:
                 headers = self.headers
                 logs_url = f"{self.base_url}{self.logs_url}{page * 15}"
                 logging.info(f"Fetching activity logs from: {logs_url}")
@@ -318,6 +318,11 @@ class LoggedInForumScraper(ForumScraper):
                 # Fetch group members
                 await self.get_group_members(session, group_id=self.group_id)
 
+                # Create a set of active moderator names for quick lookup
+                active_moderators = set(
+                    member[0].strip().lower() for member in self.members
+                )
+
                 # Scrape moderator activities
                 await self.scrape_activity_logs(session)
 
@@ -325,15 +330,28 @@ class LoggedInForumScraper(ForumScraper):
                 if self.activities:
                     self.activities_df = pd.DataFrame(self.activities)
 
+                    # Normalize moderator names in activities for matching
+                    self.activities_df['Moderator_lower'] = self.activities_df['Moderator'].str.strip().str.lower()
+
+                    # Filter activities to include only active moderators
+                    filtered_activities_df = self.activities_df[
+                        self.activities_df['Moderator_lower'].isin(active_moderators)
+                    ].drop(columns=['Moderator_lower'])
+
+                    if filtered_activities_df.empty:
+                        logging.info("No activities found for active moderators.")
+                        print("No activities found for active moderators.")
+                        return
+
                     # Save detailed activities to CSV
-                    self.activities_df.to_csv(
-                        "long_activities.csv", index=False, encoding="utf-8-sig"
+                    filtered_activities_df.to_csv(
+                        "activities.csv", index=False, encoding="utf-8-sig"
                     )
-                    logging.info("Detailed activities saved to 'activities.csv'.")
+                    logging.info("Detailed activities saved to 'long_activities.csv'.")
 
                     # Group actions by moderator and action type
                     summary = (
-                        self.activities_df.groupby(["Moderator", "Action"])
+                        filtered_activities_df.groupby(["Moderator", "Action"])
                         .size()
                         .reset_index(name="Count")
                     )
