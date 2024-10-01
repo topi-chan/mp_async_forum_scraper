@@ -44,7 +44,8 @@ class LoggedInForumScraper(ForumScraper):
         self.activity_class: str = ACTIVITY_CLASS
         self.action_element: str = ACTION_ELEMENT
         self.date_element: str = DATE_ELEMENT
-        self.activities: list[dict] = []  # Changed from DataFrame to list
+        self.activities: list[dict] = []
+        self.headers = None
 
     @async_retry((Exception,), tries=3, delay=8)
     async def login(self, session: aiohttp.ClientSession) -> bool:
@@ -224,8 +225,9 @@ class LoggedInForumScraper(ForumScraper):
         """
         try:
             page = 0
+            self.headers = self.get_random_header()
             while page < 115:
-                headers = self.get_random_header()
+                headers = self.headers
                 logs_url = f"{self.base_url}{self.logs_url}{page * 15}"
                 logging.info(f"Fetching activity logs from: {logs_url}")
 
@@ -325,7 +327,7 @@ class LoggedInForumScraper(ForumScraper):
 
                     # Save detailed activities to CSV
                     self.activities_df.to_csv(
-                        "activities.csv", index=False, encoding="utf-8-sig"
+                        "long_activities.csv", index=False, encoding="utf-8-sig"
                     )
                     logging.info("Detailed activities saved to 'activities.csv'.")
 
