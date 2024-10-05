@@ -117,9 +117,9 @@ class ForumScraper:
         :param url: The URL to fetch.
         :return: The HTML content of the URL or None if excluded.
         """
-        for i in self.exclude_sub_subforum_url:
-            if i in url:
-                logging.debug(f"Skipping sub-subforum with {i}: {url}")
+        for _ in self.exclude_sub_subforum_url:
+            if _ in url:
+                logging.debug(f"Skipping sub-subforum with {_}: {url}")
                 return None
         headers = self.get_random_header()
         logging.debug(f"Fetching URL: {url} with headers: {headers}")
