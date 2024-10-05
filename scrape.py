@@ -171,9 +171,9 @@ class ForumScraper:
             sub_subforums = soup.select(self.sub_subforum_name)
             for sub_subforum in sub_subforums:
                 title = sub_subforum.text.strip()
-                for i in self.exclude_sub_subforum_name:
-                    if i in title:
-                        logging.debug(f"Skipping sub-subforum with {i}: {title}")
+                for _ in self.exclude_sub_subforum_name:
+                    if _ in title:
+                        logging.debug(f"Skipping sub-subforum with {_}: {title}")
                         continue
                 link = sub_subforum["href"]
                 if not link.startswith("http"):
