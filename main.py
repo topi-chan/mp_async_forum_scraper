@@ -1,6 +1,7 @@
 import logging
 import os
 import subprocess
+from datetime import datetime, timedelta
 import sys
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
@@ -94,6 +95,10 @@ def login_page(request: Request) -> Jinja2Templates.TemplateResponse:
     return templates.TemplateResponse("login.html", {"request": request})
 
 
+LOGGED_PID_FILE = 'logged_scrape.pid'
+LOGGED_OUTPUT_FILE = os.path.join(RESULTS_DIR, 'activities.csv')  # Adjust path if necessary
+
+
 @app.get("/status")
 async def check_status(
     request: Request, current_user: User = Depends(get_current_active_user_from_cookie)
@@ -109,6 +114,7 @@ async def check_status(
     if current_user.password_needs_reset:
         return RedirectResponse(url="/reset-password", status_code=303)
 
+    # --- Check status of scrape.py ---
     archive_path: str = os.path.join(RESULTS_DIR, ARCHIVE_FILENAME)
     pid_file: str = PID_FILE
 
@@ -129,7 +135,7 @@ async def check_status(
     else:
         status = "not_started"
 
-    # Get last modified time
+    # Get last modified time for scrape.py output
     last_modified: float | None = (
         os.path.getmtime(archive_path) if os.path.isfile(archive_path) else None
     )
@@ -141,6 +147,42 @@ async def check_status(
             with open("scraper_user.txt", "r") as f:
                 scraper_username = f.read().strip()
 
+    # --- Check status of logged_scrape.py ---
+    logged_is_running: bool = False
+    if os.path.exists(LOGGED_PID_FILE):
+        with open(LOGGED_PID_FILE, "r") as f:
+            logged_pid: int = int(f.read())
+        if psutil.pid_exists(logged_pid):
+            logged_is_running = True
+        else:
+            # Remove stale PID file
+            os.remove(LOGGED_PID_FILE)
+
+    # Initialize logged_status and logged_last_modified
+    logged_last_modified = None
+
+    # Determine the status of logged_scrape.py
+    if logged_is_running:
+        logged_status = "in_progress"
+    elif os.path.isfile(LOGGED_OUTPUT_FILE):
+        logged_status = "complete"
+        # Get last modified time
+        logged_last_modified = os.path.getmtime(LOGGED_OUTPUT_FILE)
+    else:
+        logged_status = "not_started"
+
+    # Get the user who started the mods activity scraping (if running)
+    mods_scraper_username: Optional[str] = None
+    if logged_is_running:
+        if os.path.exists("mods_scraper_user.txt"):
+            with open("mods_scraper_user.txt", "r") as f:
+                mods_scraper_username = f.read().strip()
+
+    # Log the logged_status for debugging
+    logging.debug(f"logged_is_running: {logged_is_running}")
+    logging.debug(f"LOGGED_OUTPUT_FILE exists: {os.path.isfile(LOGGED_OUTPUT_FILE)}")
+    logging.debug(f"logged_status set to: {logged_status}")
+
     return templates.TemplateResponse(
         "status.html",
         {
@@ -151,6 +193,9 @@ async def check_status(
             "current_user": current_user,
             "datetime": datetime,
             "timedelta": timedelta,
+            "logged_status": logged_status,
+            "logged_last_modified": logged_last_modified,
+            "mods_scraper_username": mods_scraper_username,
         },
     )
 
@@ -199,7 +244,7 @@ async def scrape_and_redirect(
     else:
         # Start the scraper as a subprocess
         script_path: str = os.path.abspath("scrape.py")
-        process = subprocess.Popen(["python", script_path])
+        process = subprocess.Popen([sys.executable, script_path])
 
         # Write the subprocess PID to the PID file
         with open(pid_file, "w") as f:
@@ -212,9 +257,95 @@ async def scrape_and_redirect(
             f.write(current_user.username)
 
         # Update user's last_scrape_time
+        current_user.last_scrape_time = datetime.utcnow()
+        # Save the updated user data
         await users_collection.update_one(
             {"username": current_user.username},
-            {"$set": {"last_scrape_time": datetime.utcnow()}},
+            {"$set": {"last_scrape_time": current_user.last_scrape_time}},
+        )
+
+        # Redirect to the status page
+        return RedirectResponse(url="/status", status_code=303)
+
+
+@app.post("/scrape_mods_activity")
+async def scrape_mods_activity(
+    start_date: str = Form(...),
+    end_date: str = Form(...),
+    current_user: User = Depends(get_current_active_user_from_cookie),
+) -> RedirectResponse:
+    """
+    Endpoint that starts the mods activity scraping process and redirects to a status page.
+
+    :param start_date: The start date for scraping (from form).
+    :param end_date: The end date for scraping (from form).
+    :param current_user: The current authenticated user.
+    :return: A RedirectResponse to the status page.
+    """
+    # Validate dates
+    try:
+        start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
+        end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Please use YYYY-MM-DD.")
+
+    if start_date_obj > end_date_obj:
+        raise HTTPException(status_code=400, detail="Start date must be before end date.")
+
+    # Check if the logged scraper is already running
+    logged_is_running: bool = False
+    if os.path.exists(LOGGED_PID_FILE):
+        with open(LOGGED_PID_FILE, "r") as f:
+            logged_pid: int = int(f.read())
+        if psutil.pid_exists(logged_pid):
+            logged_is_running = True
+        else:
+            # Remove stale PID file
+            os.remove(LOGGED_PID_FILE)
+
+    # Rate limiting for non-admin users
+    if not current_user.is_admin:
+        if current_user.last_mods_scrape_time:
+            time_since_last_scrape: timedelta = (
+                datetime.utcnow() - current_user.last_mods_scrape_time
+            )
+            if time_since_last_scrape < timedelta(hours=1):
+                remaining_time: timedelta = timedelta(hours=1) - time_since_last_scrape
+                minutes, seconds = divmod(remaining_time.total_seconds(), 60)
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Please wait {int(minutes)} minutes and {int(seconds)} seconds before starting a new mods activity scrape.",
+                )
+
+    if logged_is_running:
+        logging.info("Mods activity scraper is already running.")
+        # Redirect to the status page
+        return RedirectResponse(url="/status", status_code=303)
+    else:
+        # Start the logged scraper as a subprocess with date arguments
+        script_path: str = os.path.abspath("logged_scrape.py")
+        process = subprocess.Popen([
+            sys.executable, script_path,
+            "--start_date", start_date,
+            "--end_date", end_date
+        ])
+
+        # Write the subprocess PID to the LOGGED_PID_FILE
+        with open(LOGGED_PID_FILE, "w") as f:
+            f.write(str(process.pid))
+
+        logging.info(f"Mods activity scraper started with PID {process.pid}.")
+
+        # Save the username of the user who started the mods activity scraper
+        with open("mods_scraper_user.txt", "w") as f:
+            f.write(current_user.username)
+
+        # Update user's last_mods_scrape_time
+        current_user.last_mods_scrape_time = datetime.utcnow()
+        # Save the updated user data
+        await users_collection.update_one(
+            {"username": current_user.username},
+            {"$set": {"last_mods_scrape_time": current_user.last_mods_scrape_time}},
         )
 
         # Redirect to the status page
@@ -347,9 +478,6 @@ async def reset_password(
     )
 
 
-from datetime import datetime, timedelta, timezone
-
-
 @app.get("/logout")
 async def logout() -> RedirectResponse:
     """
@@ -417,7 +545,7 @@ async def download_mods_activity(
     :return: The file response for the CSV file.
     :raises HTTPException: If the file is not found.
     """
-    file_path: str = os.path.join("activities.csv")
+    file_path: str = LOGGED_OUTPUT_FILE  # Use the same path as LOGGED_OUTPUT_FILE
     if os.path.isfile(file_path):
         logging.info("Mods activity summary found. Preparing to send the file.")
         return FileResponse(

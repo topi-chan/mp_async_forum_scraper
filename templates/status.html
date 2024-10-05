@@ -2,6 +2,9 @@
 <html>
 <head>
     <title>Scraping Status</title>
+    {% if status == "in_progress" or logged_status == "in_progress" %}
+    <meta http-equiv="refresh" content="15">
+    {% endif %}
 </head>
 <body>
     {% if password_needs_reset %}
@@ -15,11 +18,11 @@
         <input type="submit" value="Change Password">
     </form>
     {% else %}
+        <!-- Existing scraping status section for scrape.py -->
         {% if status == "in_progress" %}
             <h1>A scraping process is already in progress.</h1>
             <p>User <strong>{{ scraper_username }}</strong> started the scraping process.</p>
             <p>Please wait while we process your request. This page will refresh automatically.</p>
-            <meta http-equiv="refresh" content="15">
         {% elif status == "complete" %}
             <h1>Scraping complete!</h1>
             {% if last_modified %}
@@ -53,18 +56,49 @@
         <!-- New Section for Scrape Mods Activity -->
         <hr>
         <h2>Scrape Mods Activity</h2>
-        <p>You can scrape moderator activities by specifying a date range:</p>
-        <form action="/scrape_mods_activity" method="post">
-            <label for="start_date">Start Date:</label><br>
-            <input type="date" id="start_date" name="start_date" required><br>
-            <label for="end_date">End Date:</label><br>
-            <input type="date" id="end_date" name="end_date" required><br><br>
-            <button type="submit">Scrape Mods Activity</button>
-        </form>
-        <!-- No status checks or messages here -->
+        {% if logged_status == "in_progress" %}
+            <h1>A mods activity scraping process is already in progress.</h1>
+            <p>User <strong>{{ mods_scraper_username }}</strong> started the mods activity scraping process.</p>
+            <p>Please wait while we process your request. This page will refresh automatically.</p>
+        {% elif logged_status == "complete" %}
+            <h1>Mods Activity Scraping Complete!</h1>
+            {% if logged_last_modified %}
+                <p>Results were generated on: {{ logged_last_modified | datetimeformat }}</p>
+            {% endif %}
+            <p>You can download the results below:</p>
+            <a href="/download_mods_activity">Download Mods Activity Results</a>
+            <p>If you wish to start a new mods activity scraping session, you can do so below:</p>
+            {% if current_user.is_admin or current_user.last_mods_scrape_time is none or (datetime.utcnow() - current_user.last_mods_scrape_time).total_seconds() >= 3600 %}
+                <form action="/scrape_mods_activity" method="post">
+                    <label for="start_date_mods_complete">Start Date:</label><br>
+                    <input type="date" id="start_date_mods_complete" name="start_date" required><br>
+                    <label for="end_date_mods_complete">End Date:</label><br>
+                    <input type="date" id="end_date_mods_complete" name="end_date" required><br><br>
+                    <button type="submit">Scrape Mods Activity</button>
+                </form>
+            {% else %}
+                <p>You can start a new mods activity scrape in {{ ((current_user.last_mods_scrape_time + timedelta(hours=1)) - datetime.utcnow()).seconds // 60 }} minutes.</p>
+            {% endif %}
+        {% elif logged_status == "not_started" %}
+            <h1>No mods activity scraping results available.</h1>
+            <p>You can start a new mods activity scraping session below:</p>
+            {% if current_user.is_admin or current_user.last_mods_scrape_time is none or (datetime.utcnow() - current_user.last_mods_scrape_time).total_seconds() >= 3600 %}
+                <form action="/scrape_mods_activity" method="post">
+                    <label for="start_date_mods_not_started">Start Date:</label><br>
+                    <input type="date" id="start_date_mods_not_started" name="start_date" required><br>
+                    <label for="end_date_mods_not_started">End Date:</label><br>
+                    <input type="date" id="end_date_mods_not_started" name="end_date" required><br><br>
+                    <button type="submit">Scrape Mods Activity</button>
+                </form>
+            {% else %}
+                <p>You can start a new mods activity scrape in {{ ((current_user.last_mods_scrape_time + timedelta(hours=1)) - datetime.utcnow()).seconds // 60 }} minutes.</p>
+            {% endif %}
+        {% else %}
+            <h1>Status Unknown</h1>
+            <p>Unable to determine the status of the mods activity scraping.</p>
+        {% endif %}
 
+        <p><a href="/logout">Logout</a></p>
     {% endif %}
-
-    <p><a href="/logout">Logout</a></p>
 </body>
 </html>

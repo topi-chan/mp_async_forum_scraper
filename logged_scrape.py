@@ -2,7 +2,11 @@ import argparse
 import asyncio
 import logging
 import sys
+import time
+import os
 from datetime import datetime
+
+import psutil
 
 import aiohttp
 import aiohttp_socks
@@ -12,7 +16,7 @@ from bs4 import BeautifulSoup
 
 from config import (ACTION_ELEMENT, ACTIVITY_CLASS, DATE_ELEMENT,
                     FORUM_PASSWORD, FORUM_USERNAME, GROUP_ID, GROUP_URL,
-                    LOGIN_URL, LOGOUT_URL, LOGS_URL, MAIN_FORUM_URL,
+                    LOGIN_URL, LOGOUT_URL, LOGS_URL, MAIN_FORUM_URL, RESULTS_DIR,
                     MEMBERS_CLASS, MEMBERS_DIVS, TOR_PROXY_URL)
 from scrape import ForumScraper
 from setup import setup_logging
@@ -416,7 +420,7 @@ class LoggedInForumScraper(ForumScraper):
 
                     # Save detailed activities to CSV
                     filtered_activities_df.to_csv(
-                        "activities.csv", index=False, encoding="utf-8-sig"
+                        os.path.join(RESULTS_DIR, 'activities.csv'), index=False, encoding="utf-8-sig"
                     )
                     logging.info("Detailed activities saved to 'activities.csv'.")
 
@@ -441,6 +445,10 @@ class LoggedInForumScraper(ForumScraper):
                 print("Login failed.")
 
 
+LOGGED_PID_FILE = 'logged_scrape.pid'
+MODS_SCRAPER_USER_FILE = 'mods_scraper_user.txt'
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Forum Scraper with date range")
     parser.add_argument('--start_date', help='Start date in YYYY-MM-DD format')
@@ -448,11 +456,15 @@ def parse_arguments():
     args = parser.parse_args()
     return args
 
-# Entry point
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    username: str = FORUM_USERNAME
-    password: str = FORUM_PASSWORD
+
+def main():
+    """
+    Main function to execute the scraping process.
+
+    Assumes that PID file handling has been done in the __main__ block.
+    """
+    current_pid = os.getpid()
+    # Logging is already configured in the __main__ block
 
     # Parse command-line arguments
     args = parse_arguments()
@@ -469,15 +481,91 @@ if __name__ == "__main__":
             logging.error("Invalid date format. Please use YYYY-MM-DD.")
             sys.exit(1)
     else:
-        # No command-line arguments provided; use hardcoded dates
-        # Example usage:
-        # Define the date range for scraping activities
-        # For example, activities from October 1, 2024, to October 31, 2024
-        start_date = datetime(2024, 10, 1)
-        end_date = datetime(2024, 10, 31, 23, 59, 59)
-        logging.info(f"No date arguments provided. Using default date range: {start_date} to {end_date}")
+        # No command-line arguments provided; exit with error
+        logging.error("Start date and end date must be provided as arguments.")
+        sys.exit(1)
 
-    scraper: LoggedInForumScraper = LoggedInForumScraper(
-        username=username, password=password
+    try:
+        # Perform scraping tasks
+        logging.info(f"Starting logged scraping from {start_date} to {end_date}.")
+
+        # Initialize your scraper with the necessary credentials
+        scraper = LoggedInForumScraper(username=FORUM_USERNAME, password=FORUM_PASSWORD)
+        # Run the scraper asynchronously with the provided date range
+        asyncio.run(scraper.run(start_date, end_date))
+
+        logging.info("Logged scraping completed successfully.")
+
+    except Exception as e:
+        logging.error(f"An error occurred during logged scraping: {e}")
+
+    # Remove the mods_scraper_user.txt file if it exists
+    if os.path.exists(MODS_SCRAPER_USER_FILE):
+        os.remove(MODS_SCRAPER_USER_FILE)
+        logging.info("Mods scraper user file removed.")
+
+
+if __name__ == "__main__":
+    """
+    Entry point of the script.
+
+    Handles PID file management, configures logging, and starts the main scraping process.
+    """
+    pid_file = LOGGED_PID_FILE
+    current_pid = os.getpid()
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format=f"%(asctime)s [PID: {current_pid}] %(levelname)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
-    asyncio.run(scraper.run(start_date, end_date))
+
+    # PID file handling
+    if os.path.exists(pid_file):
+        with open(pid_file, 'r') as f:
+            existing_pid = int(f.read())
+
+        if existing_pid == current_pid:
+            # PID file contains our own PID; proceed
+            logging.info(f"PID file exists and contains our PID {existing_pid}. Proceeding.")
+        else:
+            if psutil.pid_exists(existing_pid):
+                logging.info(f"PID file exists and process {existing_pid} is still running. Exiting.")
+                sys.exit(1)
+            else:
+                # Stale PID file detected; remove it and proceed
+                os.remove(pid_file)
+                logging.info(f"Removed stale PID file with PID {existing_pid}.")
+                # Write current PID to PID file
+                with open(pid_file, 'w') as f:
+                    f.write(str(current_pid))
+                logging.info(f"Logged scraper started with PID {current_pid}.")
+    else:
+        # PID file does not exist; create it
+        with open(pid_file, 'w') as f:
+            f.write(str(current_pid))
+        logging.info(f"Logged scraper started with PID {current_pid}.")
+
+    start_time = time.perf_counter()
+    try:
+        main()
+    finally:
+        # Remove the PID file if it contains the current PID
+        if os.path.exists(pid_file):
+            with open(pid_file, "r") as f:
+                pid_in_file = int(f.read())
+            if pid_in_file == current_pid:
+                os.remove(pid_file)
+                logging.info("Logged scraper PID file removed.")
+            else:
+                logging.warning("PID file not removed because it contains a different PID.")
+        else:
+            logging.warning("PID file does not exist during cleanup.")
+
+        end_time = time.perf_counter()
+        total_time = end_time - start_time
+        minutes, seconds = divmod(total_time, 60)
+        logging.info(
+            f"Logged scraping completed in {int(minutes)} minutes and {seconds:.2f} seconds."
+        )
