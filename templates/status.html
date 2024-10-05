@@ -49,6 +49,20 @@
             <h1>Status Unknown</h1>
             <p>Unable to determine the status of your request.</p>
         {% endif %}
+
+        <!-- New Section for Scrape Mods Activity -->
+        <hr>
+        <h2>Scrape Mods Activity</h2>
+        <p>You can scrape moderator activities by specifying a date range:</p>
+        <form action="/scrape_mods_activity" method="post">
+            <label for="start_date">Start Date:</label><br>
+            <input type="date" id="start_date" name="start_date" required><br>
+            <label for="end_date">End Date:</label><br>
+            <input type="date" id="end_date" name="end_date" required><br><br>
+            <button type="submit">Scrape Mods Activity</button>
+        </form>
+        <!-- No status checks or messages here -->
+
     {% endif %}
 
     <p><a href="/logout">Logout</a></p>

@@ -1,5 +1,7 @@
+import argparse
 import asyncio
 import logging
+import sys
 from datetime import datetime
 
 import aiohttp
@@ -439,17 +441,41 @@ class LoggedInForumScraper(ForumScraper):
                 print("Login failed.")
 
 
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Forum Scraper with date range")
+    parser.add_argument('--start_date', help='Start date in YYYY-MM-DD format')
+    parser.add_argument('--end_date', help='End date in YYYY-MM-DD format')
+    args = parser.parse_args()
+    return args
+
 # Entry point
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     username: str = FORUM_USERNAME
     password: str = FORUM_PASSWORD
 
-    # Example usage:
-    # Define the date range for scraping activities
-    # For example, activities from October 1, 2024, to October 31, 2024
-    # start_date = datetime(2024, 10, 1)
-    # end_date = datetime(2024, 10, 31, 23, 59, 59)
+    # Parse command-line arguments
+    args = parse_arguments()
+
+    if args.start_date and args.end_date:
+        # Use dates from command-line arguments
+        try:
+            # Convert the input strings to datetime objects
+            start_date = datetime.strptime(args.start_date, "%Y-%m-%d")
+            end_date = datetime.strptime(args.end_date, "%Y-%m-%d")
+            # Add time component to end_date to include the entire day
+            end_date = end_date.replace(hour=23, minute=59, second=59)
+        except ValueError:
+            logging.error("Invalid date format. Please use YYYY-MM-DD.")
+            sys.exit(1)
+    else:
+        # No command-line arguments provided; use hardcoded dates
+        # Example usage:
+        # Define the date range for scraping activities
+        # For example, activities from October 1, 2024, to October 31, 2024
+        start_date = datetime(2024, 10, 1)
+        end_date = datetime(2024, 10, 31, 23, 59, 59)
+        logging.info(f"No date arguments provided. Using default date range: {start_date} to {end_date}")
 
     scraper: LoggedInForumScraper = LoggedInForumScraper(
         username=username, password=password

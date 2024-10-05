@@ -1,6 +1,7 @@
 import logging
 import os
 import subprocess
+import sys
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
@@ -367,3 +368,65 @@ async def logout() -> RedirectResponse:
         httponly=True,
     )
     return response
+
+@app.post("/scrape_mods_activity")
+async def scrape_mods_activity(
+    start_date: str = Form(...),
+    end_date: str = Form(...),
+    current_user: User = Depends(get_current_active_user_from_cookie),
+) -> RedirectResponse:
+    """
+    Endpoint that starts the mods activity scraping process and redirects to a status page.
+
+    :param start_date: The start date for scraping (from form).
+    :param end_date: The end date for scraping (from form).
+    :param current_user: The current authenticated user.
+    :return: A RedirectResponse to the status page.
+    """
+    # Validate dates
+    try:
+        start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
+        end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Please use YYYY-MM-DD.")
+
+    if start_date_obj > end_date_obj:
+        raise HTTPException(status_code=400, detail="Start date must be before end date.")
+
+    # Start the logged_scrape.py script as a subprocess with date arguments
+    script_path: str = os.path.abspath("logged_scrape.py")
+    process = subprocess.Popen([
+        sys.executable, script_path,
+        "--start_date", start_date,
+        "--end_date", end_date
+    ])
+
+    logging.info(f"Mods activity scraper started with PID {process.pid}.")
+
+    # Redirect to the status page
+    return RedirectResponse(url="/status", status_code=303)
+
+@app.get("/download_mods_activity")
+async def download_mods_activity(
+    current_user: User = Depends(get_current_active_user_from_cookie),
+) -> FileResponse:
+    """
+    Endpoint to download the mods activity CSV. Requires authentication.
+
+    :param current_user: The current authenticated user.
+    :return: The file response for the CSV file.
+    :raises HTTPException: If the file is not found.
+    """
+    file_path: str = os.path.join("activities.csv")
+    if os.path.isfile(file_path):
+        logging.info("Mods activity summary found. Preparing to send the file.")
+        return FileResponse(
+            path=file_path, filename="activities.csv", media_type="text/csv"
+        )
+    else:
+        logging.warning(
+            "Mods activity summary not found. User attempted to download before scraping."
+        )
+        raise HTTPException(
+            status_code=404, detail="Mods activity summary not found. Please run the scraper first."
+        )
