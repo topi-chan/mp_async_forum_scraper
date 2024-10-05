@@ -1,8 +1,10 @@
 import asyncio
 import logging
+from datetime import datetime
 
 import aiohttp
 import aiohttp_socks
+import dateparser
 import pandas as pd
 from bs4 import BeautifulSoup
 
@@ -142,23 +144,23 @@ class LoggedInForumScraper(ForumScraper):
             with open("post_login_page.html", "w", encoding="utf-8") as f:
                 f.write(post_login_html)
 
-                # Step 4: Verify login is successful
-                if (
-                    self.logout in post_login_html
-                    or "Wyloguj" in post_login_html
-                    or "Log out" in post_login_html
-                ):
-                    logging.info("Login successful.")
-                    return True
+            # Step 4: Verify login is successful
+            if (
+                self.logout in post_login_html
+                or "Wyloguj" in post_login_html
+                or "Log out" in post_login_html
+            ):
+                logging.info("Login successful.")
+                return True
+            else:
+                # Raise an exception to trigger the retry
+                error_message = soup.find("div", class_="error")
+                if error_message:
+                    msg = f"Login failed: {error_message.text.strip()}"
                 else:
-                    # Raise an exception to trigger the retry
-                    error_message = soup.find("div", class_="error")
-                    if error_message:
-                        msg = f"Login failed: {error_message.text.strip()}"
-                    else:
-                        msg = "Login failed. No error message found."
-                    logging.error(msg)
-                    raise Exception(msg)
+                    msg = "Login failed. No error message found."
+                logging.error(msg)
+                raise Exception(msg)
 
         except Exception as e:
             logging.exception(f"Exception during login: {e}")
@@ -219,14 +221,29 @@ class LoggedInForumScraper(ForumScraper):
         except Exception as e:
             logging.error(f"Exception during getting group members: {e}")
 
-    async def scrape_activity_logs(self, session: aiohttp.ClientSession) -> None:
+    def find_div_with_span_text(self, row, class_name, span_text):
         """
-        Scrape moderator activity logs from the first 5 pages, ignoring dates.
+        Finds a <div> within the row where the <span> contains specific text.
+        """
+        divs = row.find_all("div", class_=class_name)
+        for div in divs:
+            span = div.find("span")
+            if span and span.get_text(strip=True) == span_text:
+                return div
+        return None
+
+    async def scrape_activity_logs(
+        self, session: aiohttp.ClientSession, start_date: datetime, end_date: datetime
+    ) -> None:
+        """
+        Scrape moderator activity logs within a date range.
         """
         try:
             page = 0
             self.headers = self.get_random_header()
-            while page < 704:
+            continue_scraping = True
+
+            while continue_scraping:
                 headers = self.headers
                 logs_url = f"{self.base_url}{self.logs_url}{page * 15}"
                 logging.info(f"Fetching activity logs from: {logs_url}")
@@ -273,7 +290,9 @@ class LoggedInForumScraper(ForumScraper):
                         details = ""
 
                     # Extract moderator name
-                    mod_user_div = row.find("div", class_=self.date_element)
+                    mod_user_div = self.find_div_with_span_text(
+                        row, self.date_element, "Opinie o użytkowniku:"
+                    )
                     if mod_user_div:
                         mod_name_elem = mod_user_div.find(
                             "a", class_=self.members_class
@@ -290,11 +309,55 @@ class LoggedInForumScraper(ForumScraper):
                     else:
                         moderator_name = "Unknown"
 
+                    # Extract date string
+                    date_elem = self.find_div_with_span_text(
+                        row, self.date_element, "Czas:"
+                    )
+                    if date_elem:
+                        # Remove the span element to isolate the date text
+                        span_elem = date_elem.find("span")
+                        if span_elem:
+                            span_elem.extract()
+                        date_str = date_elem.get_text(strip=True)
+                        if date_str:
+                            # Parse the date string using dateparser
+                            parsed_date = dateparser.parse(
+                                date_str,
+                                languages=["pl"],
+                                settings={
+                                    "TIMEZONE": "Europe/Warsaw",
+                                    "RETURN_AS_TIMEZONE_AWARE": False,
+                                },
+                            )
+                            if parsed_date is None:
+                                logging.warning(f"Could not parse date: {date_str}")
+                                continue  # Skip this activity if date parsing fails
+                        else:
+                            parsed_date = None
+                            logging.warning("No date string found.")
+                    else:
+                        parsed_date = None
+                        logging.warning("Date element not found.")
+
+                    # Check if the activity is within the date range
+                    if parsed_date:
+                        if parsed_date < start_date:
+                            # Older than start date; stop scraping
+                            continue_scraping = False
+                            break
+                        elif parsed_date > end_date:
+                            # Newer than end date; skip this activity
+                            continue
+                    else:
+                        # If date is not parsed, skip this activity
+                        continue
+
                     # Append to activities list
                     action_data = {
                         "Moderator": moderator_name,
                         "Action": base_action,
                         "Details": details,
+                        "Date": parsed_date.strftime("%Y-%m-%d %H:%M:%S"),
                     }
                     self.activities.append(action_data)
 
@@ -304,9 +367,13 @@ class LoggedInForumScraper(ForumScraper):
         except Exception as e:
             logging.error(f"Exception during scraping activity logs: {e}")
 
-    async def run(self) -> None:
+    async def run(self, start_date: datetime, end_date: datetime) -> None:
         """
         Run the scraper to login and fetch group members and activities.
+
+        Args:
+            start_date (datetime): The start date for scraping activities.
+            end_date (datetime): The end date for scraping activities.
 
         Returns:
             None
@@ -324,19 +391,21 @@ class LoggedInForumScraper(ForumScraper):
                 )
 
                 # Scrape moderator activities
-                await self.scrape_activity_logs(session)
+                await self.scrape_activity_logs(session, start_date, end_date)
 
                 # Convert activities list to DataFrame
                 if self.activities:
                     self.activities_df = pd.DataFrame(self.activities)
 
                     # Normalize moderator names in activities for matching
-                    self.activities_df['Moderator_lower'] = self.activities_df['Moderator'].str.strip().str.lower()
+                    self.activities_df["Moderator_lower"] = (
+                        self.activities_df["Moderator"].str.strip().str.lower()
+                    )
 
                     # Filter activities to include only active moderators
                     filtered_activities_df = self.activities_df[
-                        self.activities_df['Moderator_lower'].isin(active_moderators)
-                    ].drop(columns=['Moderator_lower'])
+                        self.activities_df["Moderator_lower"].isin(active_moderators)
+                    ].drop(columns=["Moderator_lower"])
 
                     if filtered_activities_df.empty:
                         logging.info("No activities found for active moderators.")
@@ -347,7 +416,7 @@ class LoggedInForumScraper(ForumScraper):
                     filtered_activities_df.to_csv(
                         "activities.csv", index=False, encoding="utf-8-sig"
                     )
-                    logging.info("Detailed activities saved to 'long_activities.csv'.")
+                    logging.info("Detailed activities saved to 'activities.csv'.")
 
                     # Group actions by moderator and action type
                     summary = (
@@ -376,5 +445,13 @@ if __name__ == "__main__":
     username: str = FORUM_USERNAME
     password: str = FORUM_PASSWORD
 
-    scraper: LoggedInForumScraper = LoggedInForumScraper(username, password=password)
-    asyncio.run(scraper.run())
+    # Example usage:
+    # Define the date range for scraping activities
+    # For example, activities from October 1, 2024, to October 31, 2024
+    # start_date = datetime(2024, 10, 1)
+    # end_date = datetime(2024, 10, 31, 23, 59, 59)
+
+    scraper: LoggedInForumScraper = LoggedInForumScraper(
+        username=username, password=password
+    )
+    asyncio.run(scraper.run(start_date, end_date))

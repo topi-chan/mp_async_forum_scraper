@@ -14,7 +14,7 @@ def read_activity_csv(file_path: str) -> pd.DataFrame:
     try:
         df = pd.read_csv(file_path)
         # Ensure the columns are as expected
-        expected_columns = ['Moderator', 'Action', 'Count']
+        expected_columns = ["Moderator", "Action", "Count"]
         if not all(column in df.columns for column in expected_columns):
             raise ValueError(f"CSV file must contain columns: {expected_columns}")
         return df
@@ -45,7 +45,7 @@ def extract_base_action(action: str) -> str:
         "Zamknięto zgłoszenie",
         "Wysłano ostrzeżenie użytkownikowi",
         "Zablokowano użytkownika",
-        "Przeniesiono temat"
+        "Przeniesiono temat",
     ]
 
     action = action.strip()
@@ -65,7 +65,7 @@ def preprocess_actions(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: DataFrame with an updated 'Base Action' column.
     """
-    df['Base Action'] = df['Action'].apply(extract_base_action)
+    df["Base Action"] = df["Action"].apply(extract_base_action)
     return df
 
 
@@ -79,8 +79,8 @@ def summarize_activities_per_user(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: DataFrame with total activities per moderator.
     """
-    summary = df.groupby('Moderator')['Count'].sum().reset_index()
-    summary = summary.rename(columns={'Count': 'Total Activities'})
+    summary = df.groupby("Moderator")["Count"].sum().reset_index()
+    summary = summary.rename(columns={"Count": "Total Activities"})
     return summary
 
 
@@ -94,8 +94,8 @@ def summarize_all_actions(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: DataFrame with total counts per action type.
     """
-    summary = df.groupby('Base Action')['Count'].sum().reset_index()
-    summary = summary.rename(columns={'Count': 'Total Count'})
+    summary = df.groupby("Base Action")["Count"].sum().reset_index()
+    summary = summary.rename(columns={"Count": "Total Count"})
     return summary
 
 
@@ -109,7 +109,13 @@ def summarize_actions_per_user(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Pivot table with action types as columns and moderators as rows.
     """
-    pivot = df.pivot_table(index='Moderator', columns='Base Action', values='Count', aggfunc='sum', fill_value=0)
+    pivot = df.pivot_table(
+        index="Moderator",
+        columns="Base Action",
+        values="Count",
+        aggfunc="sum",
+        fill_value=0,
+    )
     pivot = pivot.reset_index()
     return pivot
 
@@ -124,7 +130,7 @@ def summarize_specific_activities(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: DataFrame with specific actions per moderator.
     """
-    specific_summary = df.groupby(['Moderator', 'Action'])['Count'].sum().reset_index()
+    specific_summary = df.groupby(["Moderator", "Action"])["Count"].sum().reset_index()
     return specific_summary
 
 
@@ -150,13 +156,27 @@ def dataframe_to_markdown(df: pd.DataFrame) -> str:
             col_widths[idx] = max(col_widths[idx], len(str(item)))
 
     # Create the header row
-    header_row = "| " + " | ".join([f"{headers[i].ljust(col_widths[i])}" for i in range(len(headers))]) + " |"
+    header_row = (
+        "| "
+        + " | ".join(
+            [f"{headers[i].ljust(col_widths[i])}" for i in range(len(headers))]
+        )
+        + " |"
+    )
     # Create the separator row
-    separator_row = "|-" + "-|-".join(['-' * col_widths[i] for i in range(len(headers))]) + "-|"
+    separator_row = (
+        "|-" + "-|-".join(["-" * col_widths[i] for i in range(len(headers))]) + "-|"
+    )
     # Create the data rows
     data_rows = []
     for row in data:
-        data_row = "| " + " | ".join([f"{str(row[i]).ljust(col_widths[i])}" for i in range(len(row))]) + " |"
+        data_row = (
+            "| "
+            + " | ".join(
+                [f"{str(row[i]).ljust(col_widths[i])}" for i in range(len(row))]
+            )
+            + " |"
+        )
         data_rows.append(data_row)
 
     # Combine all rows
@@ -173,7 +193,7 @@ def save_markdown(markdown_str: str, file_name: str):
         file_name (str): The name of the file to save.
     """
     try:
-        with open(file_name, 'w', encoding='utf-8') as f:
+        with open(file_name, "w", encoding="utf-8") as f:
             f.write(markdown_str)
         print(f"Markdown table saved to '{file_name}'.")
     except Exception as e:
@@ -182,7 +202,7 @@ def save_markdown(markdown_str: str, file_name: str):
 
 def main():
     # Path to your CSV file
-    csv_file_path = 'activity_summary.csv'  # Update this path if necessary
+    csv_file_path = "activity_summary.csv"  # Update this path if necessary
 
     # Read the CSV file
     df = read_activity_csv(csv_file_path)
@@ -216,14 +236,14 @@ def main():
     print(markdown_specific_activities)
 
     # Save the Markdown Tables to Files (Optional)
-    save_markdown(markdown_total_activities, 'total_activities_per_user.md')
-    save_markdown(markdown_total_actions, 'total_actions.md')
-    save_markdown(markdown_actions_per_user, 'actions_per_user.md')
-    save_markdown(markdown_specific_activities, 'specific_activities_by_moderator.md')
+    save_markdown(markdown_total_activities, "total_activities_per_user.md")
+    save_markdown(markdown_total_actions, "total_actions.md")
+    save_markdown(markdown_actions_per_user, "actions_per_user.md")
+    save_markdown(markdown_specific_activities, "specific_activities_by_moderator.md")
 
     # Additionally, save the detailed activities to a CSV file if needed
     # Here, we save the preprocessed DataFrame with 'Base Action'
-    df.to_csv('activities_detailed.csv', index=False, encoding='utf-8-sig')
+    df.to_csv("activities_detailed.csv", index=False, encoding="utf-8-sig")
     print("Detailed activities saved to 'activities_detailed.csv'.")
 
 

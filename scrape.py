@@ -17,8 +17,8 @@ from config import (BASE_URL, EXCLUDE_SUB_SUBFORUM_TOPIC,
                     TOR_PROXY_URL)
 from setup import (get_random_user_agent_and_referrer, listener_process,
                    setup_logging)
-from utils import (async_retry, create_tar_archive, save_topics, start_tor_service,
-                   wipe_files_directory)
+from utils import (async_retry, create_tar_archive, save_topics,
+                   start_tor_service, wipe_files_directory)
 
 # Separately start Tor service before the script runs - optional for development
 # try:
