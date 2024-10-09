@@ -54,6 +54,7 @@ class LoggedInForumScraper(ForumScraper):
         self.date_element: str = DATE_ELEMENT
         self.activities: list[dict] = []
         self.headers = None
+        self.activities_df = None
 
     @async_retry((Exception,), tries=3, delay=8)
     async def login(self, session: aiohttp.ClientSession) -> bool:
@@ -373,13 +374,14 @@ class LoggedInForumScraper(ForumScraper):
         except Exception as e:
             logging.error(f"Exception during scraping activity logs: {e}")
 
-    async def run(self, start_date: datetime, end_date: datetime) -> None:
+    async def run(self, start_date: datetime, end_date: datetime, mods_scope: str = 'active') -> None:
         """
         Run the scraper to login and fetch group members and activities.
 
         Args:
             start_date (datetime): The start date for scraping activities.
             end_date (datetime): The end date for scraping activities.
+            mods_scope (str): 'active' to include only active mods, 'all' to include all mods.
 
         Returns:
             None
@@ -388,34 +390,42 @@ class LoggedInForumScraper(ForumScraper):
         async with aiohttp.ClientSession(connector=connector) as session:
             logged_in: bool = await self.login(session)
             if logged_in:
-                # Fetch group members
-                await self.get_group_members(session, group_id=self.group_id)
+                # If mods_scope is 'active', fetch group members to get active moderators
+                if mods_scope == 'active':
+                    # Fetch group members
+                    await self.get_group_members(session, group_id=self.group_id)
 
-                # Create a set of active moderator names for quick lookup
-                active_moderators = set(
-                    member[0].strip().lower() for member in self.members
-                )
+                    # Create a set of active moderator names for quick lookup
+                    active_moderators = set(
+                        member[0].strip().lower() for member in self.members
+                    )
+                else:
+                    active_moderators = None  # We won't filter by active moderators
 
                 # Scrape moderator activities
                 await self.scrape_activity_logs(session, start_date, end_date)
 
-                # Convert activities list to DataFrame
+                # Process activities
                 if self.activities:
                     self.activities_df = pd.DataFrame(self.activities)
 
-                    # Normalize moderator names in activities for matching
-                    self.activities_df["Moderator_lower"] = (
-                        self.activities_df["Moderator"].str.strip().str.lower()
-                    )
+                    if mods_scope == 'active':
+                        # Normalize moderator names in activities for matching
+                        self.activities_df["Moderator_lower"] = (
+                            self.activities_df["Moderator"].str.strip().str.lower()
+                        )
 
-                    # Filter activities to include only active moderators
-                    filtered_activities_df = self.activities_df[
-                        self.activities_df["Moderator_lower"].isin(active_moderators)
-                    ].drop(columns=["Moderator_lower"])
+                        # Filter activities to include only active moderators
+                        filtered_activities_df = self.activities_df[
+                            self.activities_df["Moderator_lower"].isin(active_moderators)
+                        ].drop(columns=["Moderator_lower"])
+                    else:
+                        # Do not filter; include all moderators
+                        filtered_activities_df = self.activities_df
 
                     if filtered_activities_df.empty:
-                        logging.info("No activities found for active moderators.")
-                        print("No activities found for active moderators.")
+                        logging.info("No activities found for selected moderators.")
+                        print("No activities found for selected moderators.")
                         return
 
                     # Save detailed activities to CSV
@@ -433,7 +443,7 @@ class LoggedInForumScraper(ForumScraper):
 
                     # Save summary to CSV
                     summary.to_csv(
-                        "activity_summary.csv", index=False, encoding="utf-8-sig"
+                        os.path.join(RESULTS_DIR, "activity_summary.csv"), index=False, encoding="utf-8-sig"
                     )
                     logging.info("Activity summary saved to 'activity_summary.csv'.")
 
@@ -453,6 +463,8 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Forum Scraper with date range")
     parser.add_argument('--start_date', help='Start date in YYYY-MM-DD format')
     parser.add_argument('--end_date', help='End date in YYYY-MM-DD format')
+    parser.add_argument('--mods_scope', choices=['active', 'all'], default='active',
+                        help='Specify whether to scrape activities of only active mods or all mods')
     args = parser.parse_args()
     return args
 
@@ -463,8 +475,6 @@ def main():
 
     Assumes that PID file handling has been done in the __main__ block.
     """
-    current_pid = os.getpid()
-    # Logging is already configured in the __main__ block
 
     # Parse command-line arguments
     args = parse_arguments()
@@ -486,14 +496,10 @@ def main():
         sys.exit(1)
 
     try:
-        # Perform scraping tasks
         logging.info(f"Starting logged scraping from {start_date} to {end_date}.")
-
-        # Initialize your scraper with the necessary credentials
         scraper = LoggedInForumScraper(username=FORUM_USERNAME, password=FORUM_PASSWORD)
-        # Run the scraper asynchronously with the provided date range
-        asyncio.run(scraper.run(start_date, end_date))
-
+        # Run the scraper asynchronously with the provided date range and mods_scope
+        asyncio.run(scraper.run(start_date, end_date, mods_scope=args.mods_scope))
         logging.info("Logged scraping completed successfully.")
 
     except Exception as e:
