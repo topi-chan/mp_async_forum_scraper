@@ -1,8 +1,8 @@
 import logging
 import os
 import subprocess
-from datetime import datetime, timedelta
 import sys
+from datetime import datetime, timedelta
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
@@ -95,8 +95,10 @@ def login_page(request: Request) -> Jinja2Templates.TemplateResponse:
     return templates.TemplateResponse("login.html", {"request": request})
 
 
-LOGGED_PID_FILE = 'logged_scrape.pid'
-LOGGED_OUTPUT_FILE = os.path.join(RESULTS_DIR, 'activities.csv')  # Adjust path if necessary
+LOGGED_PID_FILE = "logged_scrape.pid"
+LOGGED_OUTPUT_FILE = os.path.join(
+    RESULTS_DIR, "activities.csv"
+)  # Adjust path if necessary
 
 
 @app.get("/status")
@@ -289,10 +291,14 @@ async def scrape_mods_activity(
         start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
         end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format. Please use YYYY-MM-DD.")
+        raise HTTPException(
+            status_code=400, detail="Invalid date format. Please use YYYY-MM-DD."
+        )
 
     if start_date_obj > end_date_obj:
-        raise HTTPException(status_code=400, detail="Start date must be before end date.")
+        raise HTTPException(
+            status_code=400, detail="Start date must be before end date."
+        )
 
     # Check if the logged scraper is already running
     logged_is_running: bool = False
@@ -327,10 +333,14 @@ async def scrape_mods_activity(
         # Start the logged scraper as a subprocess with date arguments and mods_scope
         script_path: str = os.path.abspath("logged_scrape.py")
         process_args = [
-            sys.executable, script_path,
-            "--start_date", start_date,
-            "--end_date", end_date,
-            "--mods_scope", mods_scope  # Pass the mods_scope argument
+            sys.executable,
+            script_path,
+            "--start_date",
+            start_date,
+            "--end_date",
+            end_date,
+            "--mods_scope",
+            mods_scope,  # Pass the mods_scope argument
         ]
         process = subprocess.Popen(process_args)
 
@@ -524,5 +534,6 @@ async def download_mods_activity(
             "Mods activity summary not found. User attempted to download before scraping."
         )
         raise HTTPException(
-            status_code=404, detail="Mods activity summary not found. Please run the scraper first."
+            status_code=404,
+            detail="Mods activity summary not found. Please run the scraper first.",
         )

@@ -3,6 +3,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+
 class User(BaseModel):
     username: str
     hashed_password: str
@@ -12,6 +13,15 @@ class User(BaseModel):
     last_mods_scrape_time: Optional[datetime] = None  # Add this line
     password_needs_reset: bool = False
 
+
 class PasswordChangeRequest(BaseModel):
     current_password: str
     new_password: str
+
+
+class Activity(BaseModel):
+    moderator: str
+    action: str
+    details: str
+    date: datetime
+    mods_scope: str  # 'active' or 'all' TODO: Change to Enum, check if necessary
