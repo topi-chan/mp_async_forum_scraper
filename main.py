@@ -272,6 +272,7 @@ async def scrape_and_redirect(
 async def scrape_mods_activity(
     start_date: str = Form(...),
     end_date: str = Form(...),
+    mods_scope: str = Form(...),  # Added this line
     current_user: User = Depends(get_current_active_user_from_cookie),
 ) -> RedirectResponse:
     """
@@ -279,6 +280,7 @@ async def scrape_mods_activity(
 
     :param start_date: The start date for scraping (from form).
     :param end_date: The end date for scraping (from form).
+    :param mods_scope: 'active' or 'all' to determine which mods to scrape.
     :param current_user: The current authenticated user.
     :return: A RedirectResponse to the status page.
     """
@@ -322,13 +324,15 @@ async def scrape_mods_activity(
         # Redirect to the status page
         return RedirectResponse(url="/status", status_code=303)
     else:
-        # Start the logged scraper as a subprocess with date arguments
+        # Start the logged scraper as a subprocess with date arguments and mods_scope
         script_path: str = os.path.abspath("logged_scrape.py")
-        process = subprocess.Popen([
+        process_args = [
             sys.executable, script_path,
             "--start_date", start_date,
-            "--end_date", end_date
-        ])
+            "--end_date", end_date,
+            "--mods_scope", mods_scope  # Pass the mods_scope argument
+        ]
+        process = subprocess.Popen(process_args)
 
         # Write the subprocess PID to the LOGGED_PID_FILE
         with open(LOGGED_PID_FILE, "w") as f:
@@ -497,42 +501,6 @@ async def logout() -> RedirectResponse:
     )
     return response
 
-@app.post("/scrape_mods_activity")
-async def scrape_mods_activity(
-    start_date: str = Form(...),
-    end_date: str = Form(...),
-    current_user: User = Depends(get_current_active_user_from_cookie),
-) -> RedirectResponse:
-    """
-    Endpoint that starts the mods activity scraping process and redirects to a status page.
-
-    :param start_date: The start date for scraping (from form).
-    :param end_date: The end date for scraping (from form).
-    :param current_user: The current authenticated user.
-    :return: A RedirectResponse to the status page.
-    """
-    # Validate dates
-    try:
-        start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
-        end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format. Please use YYYY-MM-DD.")
-
-    if start_date_obj > end_date_obj:
-        raise HTTPException(status_code=400, detail="Start date must be before end date.")
-
-    # Start the logged_scrape.py script as a subprocess with date arguments
-    script_path: str = os.path.abspath("logged_scrape.py")
-    process = subprocess.Popen([
-        sys.executable, script_path,
-        "--start_date", start_date,
-        "--end_date", end_date
-    ])
-
-    logging.info(f"Mods activity scraper started with PID {process.pid}.")
-
-    # Redirect to the status page
-    return RedirectResponse(url="/status", status_code=303)
 
 @app.get("/download_mods_activity")
 async def download_mods_activity(

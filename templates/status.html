@@ -70,12 +70,20 @@
             <p>If you wish to start a new mods activity scraping session, you can do so below:</p>
             {% if current_user.is_admin or current_user.last_mods_scrape_time is none or (datetime.utcnow() - current_user.last_mods_scrape_time).total_seconds() >= 3600 %}
                 <form action="/scrape_mods_activity" method="post">
-                    <label for="start_date_mods_complete">Start Date:</label><br>
-                    <input type="date" id="start_date_mods_complete" name="start_date" required><br>
-                    <label for="end_date_mods_complete">End Date:</label><br>
-                    <input type="date" id="end_date_mods_complete" name="end_date" required><br><br>
+                    <label for="start_date_mods">Start Date:</label><br>
+                    <input type="date" id="start_date_mods" name="start_date" required><br>
+                    <label for="end_date_mods">End Date:</label><br>
+                    <input type="date" id="end_date_mods" name="end_date" required><br><br>
+
+                    <label>Scrape activity of:</label><br>
+                    <input type="radio" id="active_mods_only" name="mods_scope" value="active" checked>
+                    <label for="active_mods_only">Only currently active mods</label><br>
+                    <input type="radio" id="all_mods" name="mods_scope" value="all">
+                    <label for="all_mods">All mods</label><br><br>
+
                     <button type="submit">Scrape Mods Activity</button>
                 </form>
+
             {% else %}
                 <p>You can start a new mods activity scrape in {{ ((current_user.last_mods_scrape_time + timedelta(hours=1)) - datetime.utcnow()).seconds // 60 }} minutes.</p>
             {% endif %}
