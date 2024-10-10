@@ -1,3 +1,4 @@
+import io
 import logging
 import os
 import subprocess
@@ -6,9 +7,10 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 import psutil
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import (BaseHTTPMiddleware,
@@ -20,6 +22,8 @@ from auth import (ACCESS_TOKEN_EXPIRE_MINUTES, authenticate_user,
                   verify_password)
 from config import ARCHIVE_FILENAME, PID_FILE, RESULTS_DIR
 from models import User
+from services import (fetch_active_mods, fetch_activities_from_db,
+                      get_missing_date_ranges, save_activities_from_csv_to_db)
 from setup import setup_api_logging
 
 setup_api_logging()
@@ -274,22 +278,19 @@ async def scrape_and_redirect(
 async def scrape_mods_activity(
     start_date: str = Form(...),
     end_date: str = Form(...),
-    mods_scope: str = Form(...),  # Added this line
+    mods_scope: str = Form(...),
     current_user: User = Depends(get_current_active_user_from_cookie),
 ) -> RedirectResponse:
     """
-    Endpoint that starts the mods activity scraping process and redirects to a status page.
-
-    :param start_date: The start date for scraping (from form).
-    :param end_date: The end date for scraping (from form).
-    :param mods_scope: 'active' or 'all' to determine which mods to scrape.
-    :param current_user: The current authenticated user.
-    :return: A RedirectResponse to the status page.
+    Endpoint that starts the mods activity scraping process after checking for existing data.
     """
     # Validate dates
     try:
         start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
         end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
+        end_date_obj = end_date_obj.replace(
+            hour=23, minute=59, second=59
+        )  # Include entire end date
     except ValueError:
         raise HTTPException(
             status_code=400, detail="Invalid date format. Please use YYYY-MM-DD."
@@ -298,6 +299,17 @@ async def scrape_mods_activity(
     if start_date_obj > end_date_obj:
         raise HTTPException(
             status_code=400, detail="Start date must be before end date."
+        )
+
+    # Check for existing data
+    missing_date_ranges = await get_missing_date_ranges(start_date_obj, end_date_obj)
+
+    if not missing_date_ranges:
+        # All data already scraped
+        logging.info("All requested data is already available in the database.")
+        # Redirect to status page with a message
+        return RedirectResponse(
+            url="/status?message=Data%20already%20available", status_code=303
         )
 
     # Check if the logged scraper is already running
@@ -330,29 +342,37 @@ async def scrape_mods_activity(
         # Redirect to the status page
         return RedirectResponse(url="/status", status_code=303)
     else:
-        # Start the logged scraper as a subprocess with date arguments and mods_scope
-        script_path: str = os.path.abspath("logged_scrape.py")
-        process_args = [
-            sys.executable,
-            script_path,
-            "--start_date",
-            start_date,
-            "--end_date",
-            end_date,
-            "--mods_scope",
-            mods_scope,  # Pass the mods_scope argument
-        ]
-        process = subprocess.Popen(process_args)
+        # Start the scraper for each missing date range
+        for range_start, range_end in missing_date_ranges:
+            # Convert datetime objects to strings
+            range_start_str = range_start.strftime("%Y-%m-%d")
+            range_end_str = range_end.strftime("%Y-%m-%d")
+            # Start the logged scraper as a subprocess with date arguments and mods_scope
+            script_path: str = os.path.abspath("logged_scrape.py")
+            process_args = [
+                sys.executable,
+                script_path,
+                "--start_date",
+                range_start_str,
+                "--end_date",
+                range_end_str,
+                "--mods_scope",
+                mods_scope,  # Pass the mods_scope argument
+            ]
+            process = subprocess.Popen(process_args)
+            logging.info(
+                f"Mods activity scraper started for range {range_start_str} to {range_end_str} with PID {process.pid}."
+            )
 
-        # Write the subprocess PID to the LOGGED_PID_FILE
-        with open(LOGGED_PID_FILE, "w") as f:
-            f.write(str(process.pid))
+            # Wait for the scraper to finish before starting the next one
+            process.wait()
 
-        logging.info(f"Mods activity scraper started with PID {process.pid}.")
+            # After scraper finishes, save activities to the database
+            await save_activities_from_csv_to_db(LOGGED_OUTPUT_FILE, mods_scope)
 
-        # Save the username of the user who started the mods activity scraper
-        with open("mods_scraper_user.txt", "w") as f:
-            f.write(current_user.username)
+            # Clean up the activities.csv file if needed
+            if os.path.exists(LOGGED_OUTPUT_FILE):
+                os.remove(LOGGED_OUTPUT_FILE)
 
         # Update user's last_mods_scrape_time
         current_user.last_mods_scrape_time = datetime.utcnow()
@@ -514,26 +534,48 @@ async def logout() -> RedirectResponse:
 
 @app.get("/download_mods_activity")
 async def download_mods_activity(
+    start_date: str,
+    end_date: str,
+    mods_scope: str = "active",
     current_user: User = Depends(get_current_active_user_from_cookie),
-) -> FileResponse:
+) -> StreamingResponse:
     """
-    Endpoint to download the mods activity CSV. Requires authentication.
-
-    :param current_user: The current authenticated user.
-    :return: The file response for the CSV file.
-    :raises HTTPException: If the file is not found.
+    Endpoint to download the mods activity CSV from the database.
     """
-    file_path: str = LOGGED_OUTPUT_FILE  # Use the same path as LOGGED_OUTPUT_FILE
-    if os.path.isfile(file_path):
-        logging.info("Mods activity summary found. Preparing to send the file.")
-        return FileResponse(
-            path=file_path, filename="activities.csv", media_type="text/csv"
-        )
-    else:
-        logging.warning(
-            "Mods activity summary not found. User attempted to download before scraping."
-        )
+    # Convert start_date and end_date to datetime objects
+    try:
+        start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
+        end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
+        end_date_obj = end_date_obj.replace(hour=23, minute=59, second=59)
+    except ValueError:
         raise HTTPException(
-            status_code=404,
-            detail="Mods activity summary not found. Please run the scraper first.",
+            status_code=400, detail="Invalid date format. Please use YYYY-MM-DD."
         )
+
+    # Fetch activities from the database
+    activities = await fetch_activities_from_db(start_date_obj, end_date_obj)
+
+    if not activities:
+        raise HTTPException(
+            status_code=404, detail="No activities found for the specified date range."
+        )
+
+    # If mods_scope is 'active', filter activities for active mods
+    if mods_scope == "active":
+        active_mods = await fetch_active_mods()
+        activities = [
+            activity for activity in activities if activity.moderator in active_mods
+        ]
+
+    # Convert activities to DataFrame
+    df = pd.DataFrame([activity.dict() for activity in activities])
+
+    # Generate CSV data
+    stream = io.StringIO()
+    df.to_csv(stream, index=False)
+    response = StreamingResponse(
+        iter([stream.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=activities.csv"},
+    )
+    return response
