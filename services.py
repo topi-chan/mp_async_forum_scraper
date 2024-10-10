@@ -30,10 +30,6 @@ async def ensure_indexes():
     )
 
 
-# Call this function at the start
-asyncio.run(ensure_indexes())
-
-
 async def save_activities_from_csv_to_db(csv_file_path: str, mods_scope: str):
     """
     Read activities from CSV file and save to the database.
@@ -41,6 +37,8 @@ async def save_activities_from_csv_to_db(csv_file_path: str, mods_scope: str):
     :param csv_file_path: Path to the activities.csv file.
     :param mods_scope: 'active' or 'all' to indicate the scope of mods.
     """
+    await ensure_indexes()
+
     if not os.path.exists(csv_file_path):
         return
 
