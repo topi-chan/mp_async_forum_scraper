@@ -22,8 +22,9 @@ from auth import (ACCESS_TOKEN_EXPIRE_MINUTES, authenticate_user,
                   verify_password)
 from config import ARCHIVE_FILENAME, PID_FILE, RESULTS_DIR
 from models import User
-from services import (fetch_active_mods, fetch_activities_from_db,
-                      get_missing_date_ranges, save_activities_from_csv_to_db)
+from services import (activities_collection, fetch_active_mods,
+                      fetch_activities_from_db, get_missing_date_ranges,
+                      save_activities_from_csv_to_db)
 from setup import setup_api_logging
 
 setup_api_logging()
@@ -142,12 +143,12 @@ async def check_status(
         status = "not_started"
 
     # Get last modified time for scrape.py output
-    last_modified: float | None = (
+    last_modified: Optional[float] = (
         os.path.getmtime(archive_path) if os.path.isfile(archive_path) else None
     )
 
     # Get the user who started the scraping (if running)
-    scraper_username: str | None = None
+    scraper_username: Optional[str] = None
     if is_running:
         if os.path.exists("scraper_user.txt"):
             with open("scraper_user.txt", "r") as f:
@@ -165,17 +166,22 @@ async def check_status(
             os.remove(LOGGED_PID_FILE)
 
     # Initialize logged_status and logged_last_modified
-    logged_last_modified = None
+    logged_last_modified: Optional[float] = None
 
     # Determine the status of logged_scrape.py
     if logged_is_running:
         logged_status = "in_progress"
-    elif os.path.isfile(LOGGED_OUTPUT_FILE):
-        logged_status = "complete"
-        # Get last modified time
-        logged_last_modified = os.path.getmtime(LOGGED_OUTPUT_FILE)
     else:
-        logged_status = "not_started"
+        # Check if activities data exists in the database
+        data_exists = await check_activities_data_exists()
+        if data_exists:
+            logged_status = "complete"
+            # Get the last modified time from the latest activity
+            latest_activity = await activities_collection.find_one(sort=[("date", -1)])
+            if latest_activity:
+                logged_last_modified = latest_activity["date"].timestamp()
+        else:
+            logged_status = "not_started"
 
     # Get the user who started the mods activity scraping (if running)
     mods_scraper_username: Optional[str] = None
@@ -186,8 +192,11 @@ async def check_status(
 
     # Log the logged_status for debugging
     logging.debug(f"logged_is_running: {logged_is_running}")
-    logging.debug(f"LOGGED_OUTPUT_FILE exists: {os.path.isfile(LOGGED_OUTPUT_FILE)}")
+    logging.debug(f"Data exists in DB: {data_exists}")
     logging.debug(f"logged_status set to: {logged_status}")
+
+    # Pass any messages from the query parameters
+    message = request.query_params.get("message")
 
     return templates.TemplateResponse(
         "status.html",
@@ -202,8 +211,17 @@ async def check_status(
             "logged_status": logged_status,
             "logged_last_modified": logged_last_modified,
             "mods_scraper_username": mods_scraper_username,
+            "message": message,
         },
     )
+
+
+async def check_activities_data_exists() -> bool:
+    """
+    Check if there are any activities data in the database.
+    """
+    count = await activities_collection.count_documents({})
+    return count > 0
 
 
 @app.post("/scrape")
@@ -364,6 +382,14 @@ async def scrape_mods_activity(
                 f"Mods activity scraper started for range {range_start_str} to {range_end_str} with PID {process.pid}."
             )
 
+            # Write the subprocess PID to the PID file
+            with open(LOGGED_PID_FILE, "w") as f:
+                f.write(str(process.pid))
+
+            # Save the username of the user who started the scraper
+            with open("mods_scraper_user.txt", "w") as f:
+                f.write(current_user.username)
+
             # Wait for the scraper to finish before starting the next one
             process.wait()
 
@@ -373,6 +399,14 @@ async def scrape_mods_activity(
             # Clean up the activities.csv file if needed
             if os.path.exists(LOGGED_OUTPUT_FILE):
                 os.remove(LOGGED_OUTPUT_FILE)
+
+            # Remove the PID file after completion
+            if os.path.exists(LOGGED_PID_FILE):
+                os.remove(LOGGED_PID_FILE)
+
+            # Remove the scraper user file
+            if os.path.exists("mods_scraper_user.txt"):
+                os.remove("mods_scraper_user.txt")
 
         # Update user's last_mods_scrape_time
         current_user.last_mods_scrape_time = datetime.utcnow()
@@ -566,6 +600,11 @@ async def download_mods_activity(
         activities = [
             activity for activity in activities if activity.moderator in active_mods
         ]
+
+    if not activities:
+        raise HTTPException(
+            status_code=404, detail="No activities found for the specified criteria."
+        )
 
     # Convert activities to DataFrame
     df = pd.DataFrame([activity.dict() for activity in activities])
