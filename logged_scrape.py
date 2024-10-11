@@ -1,23 +1,22 @@
 import argparse
 import asyncio
 import logging
+import os
 import sys
 import time
-import os
 from datetime import datetime
-
-import psutil
 
 import aiohttp
 import aiohttp_socks
 import dateparser
 import pandas as pd
+import psutil
 from bs4 import BeautifulSoup
 
 from config import (ACTION_ELEMENT, ACTIVITY_CLASS, DATE_ELEMENT,
                     FORUM_PASSWORD, FORUM_USERNAME, GROUP_ID, GROUP_URL,
-                    LOGIN_URL, LOGOUT_URL, LOGS_URL, MAIN_FORUM_URL, RESULTS_DIR,
-                    MEMBERS_CLASS, MEMBERS_DIVS, TOR_PROXY_URL)
+                    LOGIN_URL, LOGOUT_URL, LOGS_URL, MAIN_FORUM_URL,
+                    MEMBERS_CLASS, MEMBERS_DIVS, RESULTS_DIR, TOR_PROXY_URL)
 from scrape import ForumScraper
 from setup import setup_logging
 from utils import async_retry
@@ -374,7 +373,9 @@ class LoggedInForumScraper(ForumScraper):
         except Exception as e:
             logging.error(f"Exception during scraping activity logs: {e}")
 
-    async def run(self, start_date: datetime, end_date: datetime, mods_scope: str = 'active') -> None:
+    async def run(
+        self, start_date: datetime, end_date: datetime, mods_scope: str = "active"
+    ) -> None:
         """
         Run the scraper to login and fetch group members and activities.
 
@@ -391,7 +392,7 @@ class LoggedInForumScraper(ForumScraper):
             logged_in: bool = await self.login(session)
             if logged_in:
                 # If mods_scope is 'active', fetch group members to get active moderators
-                if mods_scope == 'active':
+                if mods_scope == "active":
                     # Fetch group members
                     await self.get_group_members(session, group_id=self.group_id)
 
@@ -400,7 +401,7 @@ class LoggedInForumScraper(ForumScraper):
                         member[0].strip().lower() for member in self.members
                     )
                 else:
-                    active_moderators = None  # We won't filter by active moderators
+                    active_moderators = None  # Won't filter by active moderators
 
                 # Scrape moderator activities
                 await self.scrape_activity_logs(session, start_date, end_date)
@@ -409,7 +410,7 @@ class LoggedInForumScraper(ForumScraper):
                 if self.activities:
                     self.activities_df = pd.DataFrame(self.activities)
 
-                    if mods_scope == 'active':
+                    if mods_scope == "active":
                         # Normalize moderator names in activities for matching
                         self.activities_df["Moderator_lower"] = (
                             self.activities_df["Moderator"].str.strip().str.lower()
@@ -417,7 +418,9 @@ class LoggedInForumScraper(ForumScraper):
 
                         # Filter activities to include only active moderators
                         filtered_activities_df = self.activities_df[
-                            self.activities_df["Moderator_lower"].isin(active_moderators)
+                            self.activities_df["Moderator_lower"].isin(
+                                active_moderators
+                            )
                         ].drop(columns=["Moderator_lower"])
                     else:
                         # Do not filter; include all moderators
@@ -430,7 +433,9 @@ class LoggedInForumScraper(ForumScraper):
 
                     # Save detailed activities to CSV
                     filtered_activities_df.to_csv(
-                        os.path.join(RESULTS_DIR, 'activities.csv'), index=False, encoding="utf-8-sig"
+                        os.path.join(RESULTS_DIR, "activities.csv"),
+                        index=False,
+                        encoding="utf-8-sig",
                     )
                     logging.info("Detailed activities saved to 'activities.csv'.")
 
@@ -443,7 +448,9 @@ class LoggedInForumScraper(ForumScraper):
 
                     # Save summary to CSV
                     summary.to_csv(
-                        os.path.join(RESULTS_DIR, "activity_summary.csv"), index=False, encoding="utf-8-sig"
+                        os.path.join(RESULTS_DIR, "activity_summary.csv"),
+                        index=False,
+                        encoding="utf-8-sig",
                     )
                     logging.info("Activity summary saved to 'activity_summary.csv'.")
 
@@ -455,16 +462,20 @@ class LoggedInForumScraper(ForumScraper):
                 print("Login failed.")
 
 
-LOGGED_PID_FILE = 'logged_scrape.pid'
-MODS_SCRAPER_USER_FILE = 'mods_scraper_user.txt'
+LOGGED_PID_FILE = "logged_scrape.pid"
+MODS_SCRAPER_USER_FILE = "mods_scraper_user.txt"
 
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Forum Scraper with date range")
-    parser.add_argument('--start_date', help='Start date in YYYY-MM-DD format')
-    parser.add_argument('--end_date', help='End date in YYYY-MM-DD format')
-    parser.add_argument('--mods_scope', choices=['active', 'all'], default='active',
-                        help='Specify whether to scrape activities of only active mods or all mods')
+    parser.add_argument("--start_date", help="Start date in YYYY-MM-DD format")
+    parser.add_argument("--end_date", help="End date in YYYY-MM-DD format")
+    parser.add_argument(
+        "--mods_scope",
+        choices=["active", "all"],
+        default="active",
+        help="Specify whether to scrape activities of only active mods or all mods",
+    )
     args = parser.parse_args()
     return args
 
@@ -529,27 +540,31 @@ if __name__ == "__main__":
 
     # PID file handling
     if os.path.exists(pid_file):
-        with open(pid_file, 'r') as f:
+        with open(pid_file, "r") as f:
             existing_pid = int(f.read())
 
         if existing_pid == current_pid:
             # PID file contains our own PID; proceed
-            logging.info(f"PID file exists and contains our PID {existing_pid}. Proceeding.")
+            logging.info(
+                f"PID file exists and contains our PID {existing_pid}. Proceeding."
+            )
         else:
             if psutil.pid_exists(existing_pid):
-                logging.info(f"PID file exists and process {existing_pid} is still running. Exiting.")
+                logging.info(
+                    f"PID file exists and process {existing_pid} is still running. Exiting."
+                )
                 sys.exit(1)
             else:
                 # Stale PID file detected; remove it and proceed
                 os.remove(pid_file)
                 logging.info(f"Removed stale PID file with PID {existing_pid}.")
                 # Write current PID to PID file
-                with open(pid_file, 'w') as f:
+                with open(pid_file, "w") as f:
                     f.write(str(current_pid))
                 logging.info(f"Logged scraper started with PID {current_pid}.")
     else:
         # PID file does not exist; create it
-        with open(pid_file, 'w') as f:
+        with open(pid_file, "w") as f:
             f.write(str(current_pid))
         logging.info(f"Logged scraper started with PID {current_pid}.")
 
@@ -565,7 +580,9 @@ if __name__ == "__main__":
                 os.remove(pid_file)
                 logging.info("Logged scraper PID file removed.")
             else:
-                logging.warning("PID file not removed because it contains a different PID.")
+                logging.warning(
+                    "PID file not removed because it contains a different PID."
+                )
         else:
             logging.warning("PID file does not exist during cleanup.")
 
