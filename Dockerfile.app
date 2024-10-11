@@ -33,7 +33,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxtst6 \
     xdg-utils
 
-# Install Python packages
 RUN pip install selenium==4.18.1 \
     && pip install requests~=2.32.3 'requests[socks]' \
     && pip install beautifulsoup4~=4.12.3 \
@@ -49,7 +48,10 @@ RUN pip install selenium==4.18.1 \
     && pip install psutil~=6.0.0 \
     && pip install APScheduler~=3.10.4 \
     && pip install python-multipart~=0.0.10 \
-    && pip install pydantic-settings~=2.5.2
+    && pip install pydantic-settings~=2.5.2 \
+    && pip install dateparser~=1.2.0 \
+    && pip install pandas~=2.2.3 \
+    && pip install undetected_chromedriver
 
 # Set the working directory
 WORKDIR /app
