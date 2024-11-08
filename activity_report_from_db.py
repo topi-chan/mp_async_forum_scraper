@@ -1,8 +1,10 @@
 import os
-import pandas as pd
-from pymongo import MongoClient
 from datetime import datetime
 from typing import Optional
+
+import pandas as pd
+from pymongo import MongoClient
+
 
 def connect_to_mongodb(uri: str, db_name: str, collection_name: str):
     """
@@ -21,7 +23,12 @@ def connect_to_mongodb(uri: str, db_name: str, collection_name: str):
     collection = db[collection_name]
     return collection
 
-def fetch_activities_from_db(collection, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None):
+
+def fetch_activities_from_db(
+    collection,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+):
     """
     Fetch activities from MongoDB within the specified date range.
 
@@ -35,17 +42,18 @@ def fetch_activities_from_db(collection, start_date: Optional[datetime] = None, 
     """
     query = {}
     if start_date and end_date:
-        query = {'date': {'$gte': start_date, '$lte': end_date}}
+        query = {"date": {"$gte": start_date, "$lte": end_date}}
     elif start_date:
-        query = {'date': {'$gte': start_date}}
+        query = {"date": {"$gte": start_date}}
     elif end_date:
-        query = {'date': {'$lte': end_date}}
+        query = {"date": {"$lte": end_date}}
     else:
         pass  # Fetch all data
 
     activities_cursor = collection.find(query)
     activities_list = list(activities_cursor)
     return activities_list
+
 
 def activities_to_dataframe(activities_list):
     """
@@ -70,6 +78,7 @@ def activities_to_dataframe(activities_list):
         raise ValueError(f"Missing expected columns in data: {missing_columns}")
 
     return df
+
 
 def extract_base_action(action: str) -> str:
     """
@@ -102,6 +111,7 @@ def extract_base_action(action: str) -> str:
             return base_action
     return "Inne akcje"  # For any other actions not listed
 
+
 def preprocess_actions(df: pd.DataFrame) -> pd.DataFrame:
     """
     Preprocesses the 'action' column to extract base action types.
@@ -116,6 +126,7 @@ def preprocess_actions(df: pd.DataFrame) -> pd.DataFrame:
     df["Count"] = 1  # Add a Count column for aggregation
     return df
 
+
 def summarize_activities_per_user(df: pd.DataFrame) -> pd.DataFrame:
     """
     Summarizes the total number of activities per moderator.
@@ -127,8 +138,11 @@ def summarize_activities_per_user(df: pd.DataFrame) -> pd.DataFrame:
         pd.DataFrame: DataFrame with total activities per moderator.
     """
     summary = df.groupby("moderator")["Count"].sum().reset_index()
-    summary = summary.rename(columns={"moderator": "Moderator", "Count": "Total Activities"})
+    summary = summary.rename(
+        columns={"moderator": "Moderator", "Count": "Total Activities"}
+    )
     return summary
+
 
 def summarize_all_actions(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -141,8 +155,11 @@ def summarize_all_actions(df: pd.DataFrame) -> pd.DataFrame:
         pd.DataFrame: DataFrame with total counts per action type.
     """
     summary = df.groupby("Base Action")["Count"].sum().reset_index()
-    summary = summary.rename(columns={"Base Action": "Action Type", "Count": "Total Count"})
+    summary = summary.rename(
+        columns={"Base Action": "Action Type", "Count": "Total Count"}
+    )
     return summary
+
 
 def summarize_actions_per_user(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -165,6 +182,7 @@ def summarize_actions_per_user(df: pd.DataFrame) -> pd.DataFrame:
     pivot = pivot.rename(columns={"moderator": "Moderator"})
     return pivot
 
+
 def summarize_specific_activities(df: pd.DataFrame) -> pd.DataFrame:
     """
     Summarizes specific actions performed by each moderator.
@@ -176,8 +194,11 @@ def summarize_specific_activities(df: pd.DataFrame) -> pd.DataFrame:
         pd.DataFrame: DataFrame with specific actions per moderator.
     """
     specific_summary = df.groupby(["moderator", "action"])["Count"].sum().reset_index()
-    specific_summary = specific_summary.rename(columns={"moderator": "Moderator", "action": "Action"})
+    specific_summary = specific_summary.rename(
+        columns={"moderator": "Moderator", "action": "Action"}
+    )
     return specific_summary
+
 
 def dataframe_to_markdown(df: pd.DataFrame) -> str:
     """
@@ -228,6 +249,7 @@ def dataframe_to_markdown(df: pd.DataFrame) -> str:
     markdown_table = "\n".join([header_row, separator_row] + data_rows)
     return markdown_table
 
+
 def save_markdown(markdown_str: str, file_name: str):
     """
     Saves a Markdown string to a file.
@@ -243,6 +265,7 @@ def save_markdown(markdown_str: str, file_name: str):
     except Exception as e:
         print(f"Error saving Markdown file: {e}")
 
+
 def main():
     # MongoDB connection parameters
     uri = os.environ.get("MONGO_URL", "mongodb://mongodb:27017/")
@@ -257,7 +280,9 @@ def main():
     # end_date = datetime(2024, 11, 8)
 
     # Fetch activities from MongoDB
-    activities_list = fetch_activities_from_db(collection)  # Add start_date, end_date if needed
+    activities_list = fetch_activities_from_db(
+        collection
+    )  # Add start_date, end_date if needed
 
     if not activities_list:
         print("No activities found.")
@@ -297,15 +322,28 @@ def main():
     # Save the Markdown Tables to Text Files
     output_dir = "results"
     os.makedirs(output_dir, exist_ok=True)
-    save_markdown(markdown_total_activities, os.path.join(output_dir, "total_activities_per_user.txt"))
+    save_markdown(
+        markdown_total_activities,
+        os.path.join(output_dir, "total_activities_per_user.txt"),
+    )
     save_markdown(markdown_total_actions, os.path.join(output_dir, "total_actions.txt"))
-    save_markdown(markdown_actions_per_user, os.path.join(output_dir, "actions_per_user.txt"))
-    save_markdown(markdown_specific_activities, os.path.join(output_dir, "specific_activities_by_moderator.txt"))
+    save_markdown(
+        markdown_actions_per_user, os.path.join(output_dir, "actions_per_user.txt")
+    )
+    save_markdown(
+        markdown_specific_activities,
+        os.path.join(output_dir, "specific_activities_by_moderator.txt"),
+    )
 
     # Additionally, save the detailed activities to a CSV file if needed
     # Here, we save the preprocessed DataFrame with 'Base Action'
-    df.to_csv(os.path.join(output_dir, "activities_detailed.csv"), index=False, encoding="utf-8-sig")
+    df.to_csv(
+        os.path.join(output_dir, "activities_detailed.csv"),
+        index=False,
+        encoding="utf-8-sig",
+    )
     print("Detailed activities saved to 'activities_detailed.csv'.")
+
 
 if __name__ == "__main__":
     main()

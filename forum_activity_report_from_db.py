@@ -1,8 +1,10 @@
 import os
-import pandas as pd
-from pymongo import MongoClient
 from datetime import datetime
 from typing import Optional
+
+import pandas as pd
+from pymongo import MongoClient
+
 
 def connect_to_mongodb(uri: str, db_name: str, collection_name: str):
     """
@@ -21,7 +23,12 @@ def connect_to_mongodb(uri: str, db_name: str, collection_name: str):
     collection = db[collection_name]
     return collection
 
-def fetch_activities_from_db(collection, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None):
+
+def fetch_activities_from_db(
+    collection,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+):
     """
     Fetch activities from MongoDB within the specified date range.
 
@@ -35,17 +42,18 @@ def fetch_activities_from_db(collection, start_date: Optional[datetime] = None, 
     """
     query = {}
     if start_date and end_date:
-        query = {'date': {'$gte': start_date, '$lte': end_date}}
+        query = {"date": {"$gte": start_date, "$lte": end_date}}
     elif start_date:
-        query = {'date': {'$gte': start_date}}
+        query = {"date": {"$gte": start_date}}
     elif end_date:
-        query = {'date': {'$lte': end_date}}
+        query = {"date": {"$lte": end_date}}
     else:
         pass  # Fetch all data
 
     activities_cursor = collection.find(query)
     activities_list = list(activities_cursor)
     return activities_list
+
 
 def activities_to_dataframe(activities_list):
     """
@@ -70,6 +78,7 @@ def activities_to_dataframe(activities_list):
         raise ValueError(f"Missing expected columns in data: {missing_columns}")
 
     return df
+
 
 def extract_base_action(action: str) -> str:
     """
@@ -102,6 +111,7 @@ def extract_base_action(action: str) -> str:
             return base_action
     return "Inne akcje"  # For any other actions not listed
 
+
 def preprocess_actions(df: pd.DataFrame) -> pd.DataFrame:
     """
     Preprocesses the 'action' column to extract base action types.
@@ -115,6 +125,7 @@ def preprocess_actions(df: pd.DataFrame) -> pd.DataFrame:
     df["Base Action"] = df["action"].apply(extract_base_action)
     df["Count"] = 1  # Add a Count column for aggregation
     return df
+
 
 def summarize_activities_per_user(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -132,6 +143,7 @@ def summarize_activities_per_user(df: pd.DataFrame) -> pd.DataFrame:
     summary = summary.sort_values(by="Total Activities", ascending=False)
     return summary
 
+
 def summarize_all_actions(df: pd.DataFrame) -> pd.DataFrame:
     """
     Summarizes the total number of each action type across all moderators.
@@ -148,6 +160,7 @@ def summarize_all_actions(df: pd.DataFrame) -> pd.DataFrame:
     summary = summary.sort_values(by="Total Count", ascending=False)
     return summary
 
+
 def summarize_specific_activities(df: pd.DataFrame) -> pd.DataFrame:
     """
     Summarizes specific actions performed by each moderator.
@@ -158,12 +171,19 @@ def summarize_specific_activities(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: DataFrame with specific actions per moderator.
     """
-    specific_summary = df.groupby(["Action Type", "Moderator"])["Count"].sum().reset_index()
+    specific_summary = (
+        df.groupby(["Action Type", "Moderator"])["Count"].sum().reset_index()
+    )
     # Sort for presentation
-    specific_summary = specific_summary.sort_values(by=["Action Type", "Count", "Moderator"], ascending=[True, False, True])
+    specific_summary = specific_summary.sort_values(
+        by=["Action Type", "Count", "Moderator"], ascending=[True, False, True]
+    )
     return specific_summary
 
-def generate_forum_table(df: pd.DataFrame, headers: list[str], columns: list[str]) -> str:
+
+def generate_forum_table(
+    df: pd.DataFrame, headers: list[str], columns: list[str]
+) -> str:
     """
     Generate a forum-formatted table from a DataFrame.
 
@@ -179,9 +199,12 @@ def generate_forum_table(df: pd.DataFrame, headers: list[str], columns: list[str
     # Add header row if needed (commented out in the example)
     # table_str += "[tr]" + "".join(f"[td][b]{header}[/b][/td]" for header in headers) + "[/tr]\n"
     for _, row in df.iterrows():
-        table_str += "[tr]" + "".join(f"[td]{row[col]}[/td]" for col in columns) + "[/tr]\n"
+        table_str += (
+            "[tr]" + "".join(f"[td]{row[col]}[/td]" for col in columns) + "[/tr]\n"
+        )
     table_str += "[/table]\n"
     return table_str
+
 
 def generate_forum_list(df: pd.DataFrame, action_type: str) -> str:
     """
@@ -201,6 +224,7 @@ def generate_forum_list(df: pd.DataFrame, action_type: str) -> str:
     list_str += "[/list]\n"
     return list_str
 
+
 def main():
     # MongoDB connection parameters
     uri = os.environ.get("MONGO_URL", "mongodb://mongodb:27017/")
@@ -210,12 +234,14 @@ def main():
     # Connect to MongoDB
     collection = connect_to_mongodb(uri, db_name, collection_name)
 
-    #Define date range if needed
+    # Define date range if needed
     # start_date = datetime(2024, 10, 1)
     # end_date = datetime(2024, 10, 31)
 
     # Fetch activities from MongoDB
-    activities_list = fetch_activities_from_db(collection)  # Add start_date, end_date if needed
+    activities_list = fetch_activities_from_db(
+        collection
+    )  # Add start_date, end_date if needed
 
     if not activities_list:
         print("No activities found.")
@@ -240,12 +266,20 @@ def main():
 
     # Total Activities per Moderator
     forum_output += "[b]Całkowita liczba działań per Moderator[/b]\n"
-    forum_output += generate_forum_table(total_activities_per_user, headers=["Moderator", "Total Activities"], columns=["Moderator", "Total Activities"])
+    forum_output += generate_forum_table(
+        total_activities_per_user,
+        headers=["Moderator", "Total Activities"],
+        columns=["Moderator", "Total Activities"],
+    )
     forum_output += "\n"
 
     # Total Activities per Action Type
     forum_output += "[b]Całkowita liczba działań per Typ Akcji[/b]\n"
-    forum_output += generate_forum_table(total_actions, headers=["Action Type", "Total Count"], columns=["Action Type", "Total Count"])
+    forum_output += generate_forum_table(
+        total_actions,
+        headers=["Action Type", "Total Count"],
+        columns=["Action Type", "Total Count"],
+    )
     forum_output += "\n"
 
     # Specific Activities by Moderator
@@ -264,8 +298,13 @@ def main():
     print(f"Forum summary saved to '{forum_output_file}'.")
 
     # Here, we save the preprocessed DataFrame with 'Action Type'
-    df.to_csv(os.path.join(output_dir, "activities_detailed.csv"), index=False, encoding="utf-8-sig")
+    df.to_csv(
+        os.path.join(output_dir, "activities_detailed.csv"),
+        index=False,
+        encoding="utf-8-sig",
+    )
     print("Detailed activities saved to 'activities_detailed.csv'.")
+
 
 if __name__ == "__main__":
     main()
